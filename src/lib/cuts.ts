@@ -1,0 +1,338 @@
+export const initialCuts: Record<
+  string,
+  {
+    prices: { ARS: number; "ARS + IVA": number; USD: number };
+    notes: string;
+    currency: "ARS" | "USD" | "ARS + IVA";
+    percentage: number;
+    macro?: string; // Indica a qué macro pertenece, si es subcorte
+    isFixedCost?: boolean; // Para "Frío", "Manipuleo", "Hueso", "Grasa"
+  }
+> = {
+  // RAL (14.34%)
+  Ral: {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "",
+    currency: "USD",
+    percentage: 14.34,
+  },
+  "Lomo sin cordón": {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "",
+    currency: "USD",
+    percentage: 1.25,
+    macro: "Ral",
+  },
+  "Bife angosto sin cordón": {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "",
+    currency: "USD",
+    percentage: 3.1,
+    macro: "Ral",
+  },
+  "Corazón de cuadril": {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "",
+    currency: "USD",
+    percentage: 1.63,
+    macro: "Ral",
+  },
+  "Tapa de cuadril": {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "",
+    currency: "USD",
+    percentage: 0.97,
+    macro: "Ral",
+  },
+  "Bife ancho sin tapa": {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "",
+    currency: "USD",
+    percentage: 2.4,
+    macro: "Ral",
+  },
+  "Tapa de bife ancho": {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "",
+    currency: "USD",
+    percentage: 0.95,
+    macro: "Ral",
+  },
+  "Recortes de ral": {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "",
+    currency: "USD",
+    percentage: 0.78,
+    macro: "Ral",
+  },
+  "Manipuleo de ral": {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "Costo fijo",
+    currency: "USD",
+    percentage: 0.5,
+    macro: "Ral",
+    isFixedCost: true,
+  },
+  "Hueso de ral": {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "Costo fijo",
+    currency: "USD",
+    percentage: 2.25,
+    macro: "Ral",
+    isFixedCost: true,
+  },
+  "Grasa de ral": {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "Costo fijo",
+    currency: "USD",
+    percentage: 0.51,
+    macro: "Ral",
+    isFixedCost: true,
+  },
+
+  // RUEDA (26.06%)
+  Rueda: {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "",
+    currency: "USD",
+    percentage: 26.06,
+  },
+  "Colita de cuadril": {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "",
+    currency: "USD",
+    percentage: 0.7,
+    macro: "Rueda",
+  },
+  "Nalga sin tapa": {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "",
+    currency: "USD",
+    percentage: 3.31,
+    macro: "Rueda",
+  },
+  "Bola de lomo": {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "",
+    currency: "USD",
+    percentage: 3.0,
+    macro: "Rueda",
+  },
+  Cuadrada: {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "",
+    currency: "USD",
+    percentage: 2.85,
+    macro: "Rueda",
+  },
+  Peceto: {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "",
+    currency: "USD",
+    percentage: 1.25,
+    macro: "Rueda",
+  },
+  "Tapa de nalga": {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "",
+    currency: "USD",
+    percentage: 1.3,
+    macro: "Rueda",
+  },
+  Tortuguita: {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "",
+    currency: "USD",
+    percentage: 0.85,
+    macro: "Rueda",
+  },
+  Garrón: {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "",
+    currency: "USD",
+    percentage: 1.35,
+    macro: "Rueda",
+  },
+  "Recortes de rueda": {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "",
+    currency: "USD",
+    percentage: 3.0,
+    macro: "Rueda",
+  },
+  "Manipuleo de rueda": {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "Costo fijo",
+    currency: "USD",
+    percentage: 0.7,
+    macro: "Rueda",
+    isFixedCost: true,
+  },
+  "Hueso de rueda": {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "Costo fijo",
+    currency: "USD",
+    percentage: 6.0,
+    macro: "Rueda",
+    isFixedCost: true,
+  },
+  "Grasa de rueda": {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "Costo fijo",
+    currency: "USD",
+    percentage: 1.75,
+    macro: "Rueda",
+    isFixedCost: true,
+  },
+
+  // PARRILLERO (16.01%)
+  Parrillero: {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "",
+    currency: "USD",
+    percentage: 16.01,
+  },
+  "Asado 10 costillas": {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "",
+    currency: "USD",
+    percentage: 8.1,
+    macro: "Parrillero",
+  },
+  Vacío: {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "",
+    currency: "USD",
+    percentage: 3.2,
+    macro: "Parrillero",
+  },
+  Matambre: {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "",
+    currency: "USD",
+    percentage: 1.55,
+    macro: "Parrillero",
+  },
+  Entraña: {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "",
+    currency: "USD",
+    percentage: 0.26,
+    macro: "Parrillero",
+  },
+  "Manipuleo de parrillero": {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "Costo fijo",
+    currency: "USD",
+    percentage: 0.4,
+    macro: "Parrillero",
+    isFixedCost: true,
+  },
+  "Grasa de parrillero": {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "Costo fijo",
+    currency: "USD",
+    percentage: 2.5,
+    macro: "Parrillero",
+    isFixedCost: true,
+  },
+
+  // DELANTERO (41.59%)
+  Delantero: {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "",
+    currency: "USD",
+    percentage: 41.59,
+  },
+  Marucha: {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "",
+    currency: "USD",
+    percentage: 1.5,
+    macro: "Delantero",
+  },
+  Aguja: {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "",
+    currency: "USD",
+    percentage: 2.84,
+    macro: "Delantero",
+  },
+  Brazuelo: {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "",
+    currency: "USD",
+    percentage: 2.26,
+    macro: "Delantero",
+  },
+  Chingolo: {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "",
+    currency: "USD",
+    percentage: 0.8,
+    macro: "Delantero",
+  },
+  Cogote: {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "",
+    currency: "USD",
+    percentage: 1.7,
+    macro: "Delantero",
+  },
+  "Carnaza de paleta": {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "",
+    currency: "USD",
+    percentage: 2.45,
+    macro: "Delantero",
+  },
+  Falda: {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "",
+    currency: "USD",
+    percentage: 3.24,
+    macro: "Delantero",
+  },
+  "Recortes de delantero": {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "",
+    currency: "USD",
+    percentage: 5.8,
+    macro: "Delantero",
+  },
+  "Manipuleo de delantero": {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "Costo fijo",
+    currency: "USD",
+    percentage: 1.3,
+    macro: "Delantero",
+    isFixedCost: true,
+  },
+  "Hueso de delantero": {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "Costo fijo",
+    currency: "USD",
+    percentage: 15.7,
+    macro: "Delantero",
+    isFixedCost: true,
+  },
+  "Grasa de delantero": {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "Costo fijo",
+    currency: "USD",
+    percentage: 4.0,
+    macro: "Delantero",
+    isFixedCost: true,
+  },
+
+  // OTROS (2%)
+  Frío: {
+    prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+    notes: "Merma fija",
+    currency: "USD",
+    percentage: 2.0,
+    isFixedCost: true,
+  },
+};
+
+export const macros = ["Ral", "Rueda", "Parrillero", "Delantero"];
