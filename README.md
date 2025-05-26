@@ -1,41 +1,40 @@
-<<<<<<< HEAD
-# beefvalue
-Sistema de análisis económico diseñado para empresas comercializadoras de carne bovina, permitiendo tomar decisiones estratégicas
-=======
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Beefvalue
 
-## Getting Started
+<p align="center">
+    <img src="src/app/favicon.ico" alt="BeefValue Logo" />
+</p>
 
-First, run the development server:
+> **Sistema de análisis económico diseñado para empresas comercializadoras de carne bovina, permitiendo tomar decisiones estratégicas.**
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+---
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## ⚙️ Tecnologías utilizadas
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- ⚡ **Next.js** – Framework moderno para aplicaciones web rápidas y escalables
+- 🛠️ **Supabase** – Base de datos y backend como servicio (BaaS)
+- 🎨 **Tailwind CSS** – Para un diseño rápido y responsivo
+- 💻 **TypeScript** – Tipado fuerte para mayor robustez
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
+## ✨ Estado del proyecto
 
-To learn more about Next.js, take a look at the following resources:
+🚧 **En desarrollo activo.**  
+🌍 _Deploy próximamente en línea._
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+---
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 👨🏼‍💻 Autor
 
-## Deploy on Vercel
+Desarrollado con pasión por [@vittorisantiago](https://github.com/vittorisantiago)  
+📍 Rosario, Argentina
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+---
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
->>>>>>> 0130052 (Initial commit from Create Next App)
+## 🐂 Visión
+
+BeefValue busca **modernizar y profesionalizar el análisis económico** en la industria de la carne bovina, brindando herramientas claras, intuitivas y basadas en datos reales para facilitar **decisiones estratégicas con impacto**.
+
+---
+
+© 2025 Beefvalue. Todos los derechos reservados.
