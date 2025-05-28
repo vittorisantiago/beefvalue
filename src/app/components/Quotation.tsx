@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import { useRouter } from "next/navigation";
 import Image from "next/image";
 import CutItem from "./CutItem";
 import BusinessModal from "./BusinessModal";
@@ -14,9 +13,13 @@ interface Business {
   cuts: string[];
 }
 
-export default function Dashboard() {
+interface QuotationProps {
+  menuOpen: boolean; // Prop para determinar si el menú está abierto o guardado
+}
+
+export default function Quotation({ menuOpen }: QuotationProps) {
   const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [userId, setUserId] = useState<string | null>(null); // Añadimos userId para RLS
+  const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [dollarRate, setDollarRate] = useState<number | null>(null);
   const [lastUpdate, setLastUpdate] = useState("Cargando...");
@@ -33,7 +36,6 @@ export default function Dashboard() {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [usdPerKg, setUsdPerKg] = useState<number>(0);
   const [mediaResWeight, setMediaResWeight] = useState<number>(0);
-  const router = useRouter();
 
   const imageMap: Record<string, string> = {
     "Colita de cuadril": "/images/colita_de_cuadril.png",
@@ -62,20 +64,6 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    const checkSession = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (session) {
-        setUserEmail(session.user.email || "Usuario");
-        setUserId(session.user.id); // Guardamos el user_id
-      } else {
-        router.push("/login");
-      }
-      setLoading(false);
-    };
-    checkSession();
-
     const fetchDollarRate = async () => {
       try {
         const response = await fetch(
@@ -112,13 +100,19 @@ export default function Dashboard() {
       else setBusinesses(data || []);
     };
     fetchBusinesses();
-  }, [router]);
 
-  const handleSignOut = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await supabase.auth.signOut();
-    router.push("/login");
-  };
+    const setUserData = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (session) {
+        setUserEmail(session.user.email || "Usuario");
+        setUserId(session.user.id);
+      }
+      setLoading(false);
+    };
+    setUserData();
+  }, []);
 
   const handleReset = () => {
     setUsdPerKg(0);
@@ -288,7 +282,7 @@ export default function Dashboard() {
           .from("businesses")
           .update({ name: businessName, cuts: selectedCutsModal })
           .eq("id", editBusinessId)
-          .eq("user_id", userId); // Añadimos filtro por user_id
+          .eq("user_id", userId);
         if (error) throw new Error(`Error updating business: ${error.message}`);
         setBusinesses(
           businesses.map((b) =>
@@ -302,7 +296,7 @@ export default function Dashboard() {
           .from("businesses")
           .insert([
             { name: businessName, cuts: selectedCutsModal, user_id: userId },
-          ]) // Añadimos user_id
+          ])
           .select();
         if (error) throw new Error(`Error adding business: ${error.message}`);
         if (data) {
@@ -326,7 +320,7 @@ export default function Dashboard() {
       .from("businesses")
       .delete()
       .eq("id", id)
-      .eq("user_id", userId); // Añadimos filtro por user_id
+      .eq("user_id", userId);
     if (error) console.error("Error deleting business:", error);
     else {
       setBusinesses(businesses.filter((b) => b.id !== id));
@@ -368,98 +362,83 @@ export default function Dashboard() {
       : Number(((differenceUSD / totalInitialUSDNum) * 100).toFixed(2));
 
   return (
-    <>
-      <nav className="bg-[var(--background)] border-b border-gray-200 dark:border-gray-700 shadow-md p-4 flex justify-between items-center sticky top-0 z-10">
-        <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-bold text-[var(--foreground)] tracking-tight">
-            BeefValue
-          </h1>
-          <div className="flex items-center gap-2">
-            <label className="text-[var(--foreground)]">
-              Peso Media Res (kg):
-            </label>
-            <input
-              type="number"
-              min="0"
-              step="0.1"
-              value={mediaResWeight}
-              onFocus={(e) => {
-                if (e.target.value === "0") e.target.value = "";
-              }}
-              onChange={(e) => setMediaResWeight(Number(e.target.value))}
-              className="px-2 py-1 bg-[var(--background)] border border-gray-300 dark:border-gray-600 rounded-md text-[var(--foreground)] focus:ring-2 focus:ring-[var(--primary)] w-24"
-              required
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <label className="text-[var(--foreground)]">USD/kg:</label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={usdPerKg}
-              onFocus={(e) => {
-                if (e.target.value === "0") e.target.value = "";
-              }}
-              onChange={(e) => setUsdPerKg(Number(e.target.value))}
-              className="px-2 py-1 bg-[var(--background)] border border-gray-300 dark:border-gray-600 rounded-md text-[var(--foreground)] focus:ring-2 focus:ring-[var(--primary)] w-24"
-              required
-            />
-          </div>
+    <div className="flex flex-1 flex-col p-6 overflow-y-auto">
+      <div className="flex items-center gap-4 mb-6">
+        <div className="flex items-center gap-2">
+          <label className="text-[var(--foreground)]">
+            Peso Media Res (kg):
+          </label>
+          <input
+            type="number"
+            min="0"
+            step="0.1"
+            value={mediaResWeight}
+            onFocus={(e) => {
+              if (e.target.value === "0") e.target.value = "";
+            }}
+            onChange={(e) => setMediaResWeight(Number(e.target.value))}
+            className="px-2 py-1 bg-[var(--background)] border border-gray-300 dark:border-gray-600 rounded-md text-[var(--foreground)] focus:ring-2 focus:ring-[var(--primary)] w-24"
+            required
+          />
         </div>
-        <div className="flex items-center gap-4">
-          {usdPerKg > 0 && mediaResWeight > 0 && (
-            <>
-              <select
-                value={selectedBusiness || ""}
-                onChange={(e) => handleBusinessSelect(e.target.value)}
-                className="px-3 py-2 bg-[var(--background)] border border-gray-300 dark:border-gray-600 rounded-md text-[var(--foreground)] focus:ring-2 focus:ring-[var(--primary)] cursor-pointer"
-              >
-                <option value="">Seleccionar Negocio</option>
-                {businesses.map((business) => (
-                  <option key={business.id} value={business.id}>
-                    {business.name}
-                  </option>
-                ))}
-              </select>
-              <button
-                onClick={() => openBusinessModal("add")}
-                className="px-3 py-2 bg-[var(--primary)] text-white rounded-md hover:bg-[var(--primary-hover)] transition-all flex items-center gap-1 cursor-pointer"
-              >
-                <span>+</span> Agregar
-              </button>
-              {selectedBusiness && (
-                <button
-                  onClick={() => openBusinessModal("edit", selectedBusiness)}
-                  className="px-3 py-2 bg-yellow-500 text-white rounded-md hover:bg-yellow-600 transition-all flex items-center gap-1 cursor-pointer"
-                >
-                  ✏️ Editar
-                </button>
-              )}
-              <button
-                onClick={() => alert("Guardando histórico...")}
-                className="px-4 py-2 bg-[var(--primary)] text-white rounded-md hover:bg-[var(--primary-hover)] transition-all cursor-pointer"
-              >
-                Guardar Cotización
-              </button>
-              <button
-                onClick={handleReset}
-                className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-all cursor-pointer"
-              >
-                Limpiar
-              </button>
-            </>
-          )}
-          <form onSubmit={handleSignOut}>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 focus:ring-2 focus:ring-red-500 transition-all cursor-pointer"
+        <div className="flex items-center gap-2">
+          <label className="text-[var(--foreground)]">USD/kg:</label>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={usdPerKg}
+            onFocus={(e) => {
+              if (e.target.value === "0") e.target.value = "";
+            }}
+            onChange={(e) => setUsdPerKg(Number(e.target.value))}
+            className="px-2 py-1 bg-[var(--background)] border border-gray-300 dark:border-gray-600 rounded-md text-[var(--foreground)] focus:ring-2 focus:ring-[var(--primary)] w-24"
+            required
+          />
+        </div>
+        {usdPerKg > 0 && mediaResWeight > 0 && (
+          <>
+            <select
+              value={selectedBusiness || ""}
+              onChange={(e) => handleBusinessSelect(e.target.value)}
+              className="px-3 py-2 bg-[var(--background)] border border-gray-300 dark:border-gray-600 rounded-md text-[var(--foreground)] focus:ring-2 focus:ring-[var(--primary)] cursor-pointer"
             >
-              Cerrar Sesión
+              <option value="">Seleccionar Negocio</option>
+              {businesses.map((business) => (
+                <option key={business.id} value={business.id}>
+                  {business.name}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => openBusinessModal("add")}
+              className="px-3 py-2 bg-[var(--primary)] text-white rounded-md hover:bg-[var(--primary-hover)] transition-all flex items-center gap-1 cursor-pointer"
+            >
+              <span>+</span> Agregar
             </button>
-          </form>
-        </div>
-      </nav>
+            {selectedBusiness && (
+              <button
+                onClick={() => openBusinessModal("edit", selectedBusiness)}
+                className="px-3 py-2 bg-yellow-500 text-white rounded-md hover:bg-yellow-600 transition-all flex items-center gap-1 cursor-pointer"
+              >
+                ✏️ Editar
+              </button>
+            )}
+            <button
+              onClick={() => alert("Guardando histórico...")}
+              className="px-4 py-2 bg-[var(--primary)] text-white rounded-md hover:bg-[var(--primary-hover)] transition-all cursor-pointer"
+            >
+              Guardar Cotización
+            </button>
+            <button
+              onClick={handleReset}
+              className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-all cursor-pointer"
+            >
+              Limpiar
+            </button>
+          </>
+        )}
+      </div>
 
       <BusinessModal
         show={showBusinessModal}
@@ -477,7 +456,13 @@ export default function Dashboard() {
       />
 
       <div className="flex flex-1 overflow-hidden">
-        <aside className="w-[28rem] sm:w-[32rem] lg:w-[36rem] bg-[var(--background)] border-r border-gray-200 dark:border-gray-700 p-4 overflow-y-auto">
+        <aside
+          className={`${
+            menuOpen
+              ? "w-[24rem] sm:w-[26rem] lg:w-[28rem]"
+              : "w-[20rem] sm:w-[22rem] lg:w-[24rem]"
+          } bg-[var(--background)] border-r border-gray-200 dark:border-gray-700 p-4 overflow-y-auto transition-all duration-300`}
+        >
           <div className="space-y-4">
             {usdPerKg > 0 && mediaResWeight > 0 && (
               <div className="text-sm text-gray-600 dark:text-gray-400">
@@ -758,6 +743,6 @@ export default function Dashboard() {
           </div>
         </main>
       </div>
-    </>
+    </div>
   );
 }
