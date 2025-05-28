@@ -1,4 +1,4 @@
-# Beefvalue
+# BeefValue
 
 <p align="center">
     <img src="src/app/favicon.ico" alt="BeefValue Logo" />
@@ -26,7 +26,7 @@
 
 ## 👨🏼‍💻 Autor
 
-Desarrollado con pasión por [@vittorisantiago](https://github.com/vittorisantiago)  
+Desarrollado por [@vittorisantiago](https://github.com/vittorisantiago)  
 📍 Rosario, Argentina
 
 ---
@@ -37,4 +37,4 @@ BeefValue busca **modernizar y profesionalizar el análisis económico** en la i
 
 ---
 
-© 2025 Beefvalue. Todos los derechos reservados.
+© 2025 BeefValue. Todos los derechos reservados.
