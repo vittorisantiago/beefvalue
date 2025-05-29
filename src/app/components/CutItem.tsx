@@ -36,11 +36,11 @@ export default function CutItem({
 
   return (
     <div
-      className={`bg-white dark:bg-gray-800 border ${
+      className={`bg-white dark:bg-gray-800 border rounded-md p-2 ${
         isDisabled
-          ? "border-gray-200 dark:border-gray-700 opacity-50"
-          : "border-blue-500 border-2"
-      } rounded-md p-2`}
+          ? "border-gray-300 dark:border-gray-700 opacity-50"
+          : "border-gray-400 dark:border-gray-500"
+      }`}
     >
       <div
         onClick={onClick}
