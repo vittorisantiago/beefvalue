@@ -66,9 +66,7 @@ export default function Quotation({ menuOpen }: QuotationProps) {
   useEffect(() => {
     const fetchDollarRate = async () => {
       try {
-        const response = await fetch(
-          "https://dolarapi.com/v1/dolares/mayorista"
-        );
+        const response = await fetch("https://dolarapi.com/v1/dolares/oficial");
         const data = await response.json();
         setDollarRate(data.venta);
         setLastUpdate(
@@ -362,81 +360,143 @@ export default function Quotation({ menuOpen }: QuotationProps) {
       : Number(((differenceUSD / totalInitialUSDNum) * 100).toFixed(2));
 
   return (
-    <div className="flex flex-1 flex-col p-6 overflow-y-auto">
-      <div className="flex items-center gap-4 mb-6">
-        <div className="flex items-center gap-2">
-          <label className="text-[var(--foreground)]">
-            Peso Media Res (kg):
-          </label>
-          <input
-            type="number"
-            min="0"
-            step="0.1"
-            value={mediaResWeight}
-            onFocus={(e) => {
-              if (e.target.value === "0") e.target.value = "";
-            }}
-            onChange={(e) => setMediaResWeight(Number(e.target.value))}
-            className="px-2 py-1 bg-[var(--background)] border border-gray-300 dark:border-gray-600 rounded-md text-[var(--foreground)] focus:ring-2 focus:ring-[var(--primary)] w-24"
-            required
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          <label className="text-[var(--foreground)]">USD/kg:</label>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={usdPerKg}
-            onFocus={(e) => {
-              if (e.target.value === "0") e.target.value = "";
-            }}
-            onChange={(e) => setUsdPerKg(Number(e.target.value))}
-            className="px-2 py-1 bg-[var(--background)] border border-gray-300 dark:border-gray-600 rounded-md text-[var(--foreground)] focus:ring-2 focus:ring-[var(--primary)] w-24"
-            required
-          />
+    <div className="flex flex-1 flex-col p-6 overflow-hidden">
+      <div className="mb-6">
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-2">
+            <label className="text-[var(--foreground)]">
+              Peso Prom. Media Res (kg):
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="0.1"
+              value={mediaResWeight}
+              onFocus={(e) => {
+                if (e.target.value === "0") e.target.value = "";
+              }}
+              onChange={(e) => setMediaResWeight(Number(e.target.value))}
+              className="px-2 py-1 bg-[var(--background)] border border-gray-300 dark:border-gray-600 rounded-md text-[var(--foreground)] focus:ring-2 focus:ring-[var(--primary)] w-24"
+              required
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-[var(--foreground)]">USD/kg:</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={usdPerKg}
+              onFocus={(e) => {
+                if (e.target.value === "0") e.target.value = "";
+              }}
+              onChange={(e) => setUsdPerKg(Number(e.target.value))}
+              className="px-2 py-1 bg-[var(--background)] border border-gray-300 dark:border-gray-600 rounded-md text-[var(--foreground)] focus:ring-2 focus:ring-[var(--primary)] w-24"
+              required
+            />
+          </div>
+          {usdPerKg > 0 && mediaResWeight > 0 && (
+            <>
+              <select
+                value={selectedBusiness || ""}
+                onChange={(e) => handleBusinessSelect(e.target.value)}
+                className="px-3 py-2 bg-[var(--background)] border border-gray-300 dark:border-gray-600 rounded-md text-[var(--foreground)] focus:ring-2 focus:ring-[var(--primary)] cursor-pointer"
+              >
+                <option value="">Seleccionar Negocio</option>
+                {businesses.map((business) => (
+                  <option key={business.id} value={business.id}>
+                    {business.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={() => openBusinessModal("add")}
+                className="px-3 py-2 bg-[var(--primary)] text-white rounded-md hover:bg-[var(--primary-hover)] transition-all flex items-center gap-1 cursor-pointer"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  strokeWidth={2}
+                  stroke="currentColor"
+                  className="w-5 h-5"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M12 4.5v15m7.5-7.5h-15"
+                  />
+                </svg>
+                Agregar
+              </button>
+              {selectedBusiness && (
+                <button
+                  onClick={() => openBusinessModal("edit", selectedBusiness)}
+                  className="px-3 py-2 bg-yellow-500 text-white rounded-md hover:bg-yellow-600 transition-all flex items-center gap-1 cursor-pointer"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2}
+                    stroke="currentColor"
+                    className="w-5 h-5"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125"
+                    />
+                  </svg>
+                  Editar
+                </button>
+              )}
+            </>
+          )}
         </div>
         {usdPerKg > 0 && mediaResWeight > 0 && (
-          <>
-            <select
-              value={selectedBusiness || ""}
-              onChange={(e) => handleBusinessSelect(e.target.value)}
-              className="px-3 py-2 bg-[var(--background)] border border-gray-300 dark:border-gray-600 rounded-md text-[var(--foreground)] focus:ring-2 focus:ring-[var(--primary)] cursor-pointer"
-            >
-              <option value="">Seleccionar Negocio</option>
-              {businesses.map((business) => (
-                <option key={business.id} value={business.id}>
-                  {business.name}
-                </option>
-              ))}
-            </select>
-            <button
-              onClick={() => openBusinessModal("add")}
-              className="px-3 py-2 bg-[var(--primary)] text-white rounded-md hover:bg-[var(--primary-hover)] transition-all flex items-center gap-1 cursor-pointer"
-            >
-              <span>+</span> Agregar
-            </button>
-            {selectedBusiness && (
-              <button
-                onClick={() => openBusinessModal("edit", selectedBusiness)}
-                className="px-3 py-2 bg-yellow-500 text-white rounded-md hover:bg-yellow-600 transition-all flex items-center gap-1 cursor-pointer"
-              >
-                ✏️ Editar
-              </button>
-            )}
-            <button
-              onClick={() => alert("Guardando histórico...")}
-              className="px-4 py-2 bg-[var(--primary)] text-white rounded-md hover:bg-[var(--primary-hover)] transition-all cursor-pointer"
-            >
-              Guardar Cotización
-            </button>
+          <div className="flex justify-end gap-4 mt-4">
             <button
               onClick={handleReset}
-              className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-all cursor-pointer"
+              className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-all flex items-center gap-1 cursor-pointer"
             >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={2}
+                stroke="currentColor"
+                className="w-5 h-5"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.992"
+                />
+              </svg>
               Limpiar
             </button>
-          </>
+            <button
+              onClick={() => alert("Guardando histórico...")}
+              className="px-4 py-2 bg-green-400 text-white rounded-md hover:bg-green-500 transition-all flex items-center gap-1 cursor-pointer"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={2}
+                stroke="currentColor"
+                className="w-5 h-5"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M5 13l4 4L19 7"
+                />
+              </svg>
+              Guardar Cotización
+            </button>
+          </div>
         )}
       </div>
 
@@ -456,24 +516,18 @@ export default function Quotation({ menuOpen }: QuotationProps) {
       />
 
       <div className="flex flex-1 overflow-hidden">
-        <aside
-          className={`${
-            menuOpen
-              ? "w-[24rem] sm:w-[26rem] lg:w-[28rem]"
-              : "w-[20rem] sm:w-[22rem] lg:w-[24rem]"
-          } bg-[var(--background)] border-r border-gray-200 dark:border-gray-700 p-4 overflow-y-auto transition-all duration-300`}
-        >
+        <aside className="w-[28rem] sm:w-[30rem] lg:w-[29rem] bg-[var(--background)] border-r border-gray-200 dark:border-gray-700 p-4 overflow-y-auto shrink-0">
           <div className="space-y-4">
             {usdPerKg > 0 && mediaResWeight > 0 && (
               <div className="text-sm text-gray-600 dark:text-gray-400">
-                <p>
-                  Dólar (mayorista): $
+                <p className="text-base md:text-lg">
+                  Dólar (oficial): $
                   {dollarRate?.toLocaleString("es-AR", {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
                   }) || "Cargando..."}
                 </p>
-                <p>
+                <p className="text-base md:text-lg">
                   Última actualización: <span>{lastUpdate}</span>
                 </p>
               </div>
@@ -523,7 +577,11 @@ export default function Quotation({ menuOpen }: QuotationProps) {
           </div>
         </aside>
 
-        <main className="flex-1 p-6 overflow-y-auto">
+        <main
+          className={`flex-1 p-6 overflow-y-auto transition-all duration-300 ${
+            menuOpen ? "ml-64" : "ml-14"
+          }`}
+        >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {usdPerKg > 0 && mediaResWeight > 0 && (
               <div className="bg-[var(--background)] border-2 border-gray-300 dark:border-gray-600 rounded-xl shadow-lg p-6 col-span-2">
@@ -533,7 +591,7 @@ export default function Quotation({ menuOpen }: QuotationProps) {
                 <div className="flex flex-col gap-2 text-lg text-[var(--foreground)]">
                   <p>
                     <span className="font-semibold">Peso:</span>{" "}
-                    {mediaResWeight} kg
+                    {mediaResWeight} Kg
                   </p>
                   <p>
                     <span className="font-semibold">Valor por kg:</span> $
