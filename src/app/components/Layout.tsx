@@ -80,7 +80,7 @@ export default function Layout({ children }: LayoutProps) {
       ),
     },
     {
-      name: "Historial de Cotizaciones",
+      name: "Historial Cotizaciones",
       href: "/historial",
       icon: (
         <svg
