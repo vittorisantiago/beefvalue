@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import { initialCuts } from "../../lib/cuts";
 
 interface CutItemProps {
   cut: string;
@@ -12,13 +11,17 @@ interface CutItemProps {
     value: string | number
   ) => void;
   data: {
+    id: string;
     prices: { ARS: number; "ARS + IVA": number; USD: number };
     notes: string;
     currency: "ARS" | "USD" | "ARS + IVA";
+    isFixedCost: boolean;
   };
   onClick?: () => void;
   image?: string;
   isDisabled?: boolean;
+  hasMissingPrice?: boolean; // Prop existente para resaltar precios faltantes
+  className?: string; // Nueva prop para aceptar clases personalizadas
 }
 
 export default function CutItem({
@@ -29,6 +32,8 @@ export default function CutItem({
   onClick,
   image,
   isDisabled,
+  hasMissingPrice = false,
+  className,
 }: CutItemProps) {
   const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
     if (e.target.value === "0") e.target.value = "";
@@ -39,8 +44,10 @@ export default function CutItem({
       className={`bg-white dark:bg-gray-800 border rounded-md p-2 ${
         isDisabled
           ? "border-gray-300 dark:border-gray-700 opacity-50"
+          : hasMissingPrice
+          ? "border-red-500 border-2"
           : "border-gray-400 dark:border-gray-500"
-      }`}
+      } ${className || ""}`}
     >
       <div
         onClick={onClick}
@@ -70,20 +77,18 @@ export default function CutItem({
               value={data.prices[data.currency]}
               onFocus={handleFocus}
               onChange={(e) => onChange(cut, "price", e.target.value)}
-              disabled={isDisabled || initialCuts[cut].isFixedCost}
+              disabled={isDisabled || data.isFixedCost}
               className={`w-full sm:w-auto flex-1 px-2 py-1 bg-transparent text-[var(--foreground)] focus:ring-2 focus:ring-[var(--primary)] outline-none ${
-                isDisabled || initialCuts[cut].isFixedCost
-                  ? "cursor-not-allowed"
-                  : ""
+                isDisabled || data.isFixedCost ? "cursor-not-allowed" : ""
               }`}
             />
           </div>
           <select
             value={data.currency}
             onChange={(e) => onChange(cut, "currency", e.target.value)}
-            disabled={isDisabled || initialCuts[cut].isFixedCost}
+            disabled={isDisabled || data.isFixedCost}
             className={`w-full sm:w-32 px-2 py-1 bg-[var(--background)] border border-gray-300 dark:border-gray-600 rounded-md text-[var(--foreground)] focus:ring-2 focus:ring-[var(--primary)] ${
-              isDisabled || initialCuts[cut].isFixedCost
+              isDisabled || data.isFixedCost
                 ? "cursor-not-allowed"
                 : "cursor-pointer"
             }`}
