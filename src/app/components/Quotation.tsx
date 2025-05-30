@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import Image from "next/image";
 import CutItem from "./CutItem";
 import BusinessModal from "./BusinessModal";
-import { initialCuts, macros } from "@/lib/cuts";
+import { fetchCuts, macros, type Cut } from "@/lib/cuts";
 
 interface Business {
   id: string;
@@ -14,7 +14,13 @@ interface Business {
 }
 
 interface QuotationProps {
-  menuOpen: boolean; // Prop para determinar si el menú está abierto o guardado
+  menuOpen: boolean;
+}
+
+interface CutState extends Cut {
+  prices: { ARS: number; "ARS + IVA": number; USD: number };
+  notes: string;
+  currency: "ARS" | "USD" | "ARS + IVA";
 }
 
 export default function Quotation({ menuOpen }: QuotationProps) {
@@ -23,7 +29,7 @@ export default function Quotation({ menuOpen }: QuotationProps) {
   const [loading, setLoading] = useState(true);
   const [dollarRate, setDollarRate] = useState<number | null>(null);
   const [lastUpdate, setLastUpdate] = useState("Cargando...");
-  const [cuts, setCuts] = useState(initialCuts);
+  const [cuts, setCuts] = useState<Record<string, CutState>>({});
   const [selectedCutImage, setSelectedCutImage] = useState<string | null>(null);
   const [selectedCutName, setSelectedCutName] = useState<string | null>(null);
   const [businesses, setBusinesses] = useState<Business[]>([]);
@@ -36,6 +42,23 @@ export default function Quotation({ menuOpen }: QuotationProps) {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [usdPerKg, setUsdPerKg] = useState<number>(0);
   const [mediaResWeight, setMediaResWeight] = useState<number>(0);
+  const [showMissingPricesPopup, setShowMissingPricesPopup] = useState(false);
+  const [missingPriceCuts, setMissingPriceCuts] = useState<string[]>([]);
+  const [showSuccessPopup, setShowSuccessPopup] = useState(false);
+  const [showErrorPopup, setShowErrorPopup] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [showBusinessSuccessPopup, setShowBusinessSuccessPopup] =
+    useState(false);
+  const [showBusinessErrorPopup, setShowBusinessErrorPopup] = useState(false);
+  const [businessErrorMessage, setBusinessErrorMessage] = useState("");
+  const [showNoBusinessPopup, setShowNoBusinessPopup] = useState(false);
+  const [showBusinessInUsePopup, setShowBusinessInUsePopup] = useState(false);
+  const [businessHasQuotations, setBusinessHasQuotations] = useState<
+    Record<string, boolean>
+  >({});
+  const [lastAction, setLastAction] = useState<
+    "created" | "updated" | "deleted" | null
+  >(null);
 
   const imageMap: Record<string, string> = {
     "Colita de cuadril": "/images/colita_de_cuadril.png",
@@ -93,9 +116,36 @@ export default function Quotation({ menuOpen }: QuotationProps) {
     fetchDollarRate();
 
     const fetchBusinesses = async () => {
-      const { data, error } = await supabase.from("businesses").select("*");
+      const { data, error } = await supabase.from("businesses").select(`
+        id,
+        name,
+        user_id,
+        business_cuts (cut_id)
+      `);
       if (error) console.error("Error fetching businesses:", error);
-      else setBusinesses(data || []);
+      else {
+        const businessesData = data.map((business) => ({
+          id: business.id,
+          name: business.name,
+          cuts: business.business_cuts.map(
+            (bc: { cut_id: string }) => bc.cut_id
+          ),
+        }));
+        setBusinesses(businessesData || []);
+
+        // Verificar si cada negocio tiene cotizaciones asociadas
+        const quotationsCheck: Record<string, boolean> = {};
+        for (const business of businessesData) {
+          const { data: quotations } = await supabase
+            .from("quotations")
+            .select("id")
+            .eq("business_id", business.id)
+            .limit(1);
+          quotationsCheck[business.id] =
+            Array.isArray(quotations) && quotations.length > 0;
+        }
+        setBusinessHasQuotations(quotationsCheck);
+      }
     };
     fetchBusinesses();
 
@@ -107,15 +157,91 @@ export default function Quotation({ menuOpen }: QuotationProps) {
         setUserEmail(session.user.email || "Usuario");
         setUserId(session.user.id);
       }
-      setLoading(false);
     };
     setUserData();
+
+    const initializeCuts = async () => {
+      const fetchedCuts = await fetchCuts();
+      const initialCutsState: Record<string, CutState> = {};
+      Object.entries(fetchedCuts).forEach(([name, cut]) => {
+        initialCutsState[name] = {
+          ...cut,
+          prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+          notes: "",
+          currency: "ARS",
+        };
+      });
+      setCuts(initialCutsState);
+      setLoading(false);
+    };
+    initializeCuts();
   }, []);
+
+  const getDisplayCuts = useCallback(() => {
+    const business = businesses.find((b) => b.id === selectedBusiness);
+    if (!business) return [];
+
+    const displayCuts: string[] = [];
+    macros.forEach((macro) => {
+      const subCuts = Object.keys(cuts).filter(
+        (cut) => cuts[cut].macro === macro && !cuts[cut].isFixedCost
+      );
+      const hasSelectedSubCut = subCuts.some((cut) =>
+        business.cuts.includes(cuts[cut].id)
+      );
+
+      if (!hasSelectedSubCut) {
+        displayCuts.push(macro);
+      } else {
+        Object.keys(cuts).forEach((cut) => {
+          if (cuts[cut].macro === macro) {
+            displayCuts.push(cut);
+          }
+        });
+      }
+    });
+    displayCuts.push("Frío");
+    return displayCuts;
+  }, [businesses, selectedBusiness, cuts]);
+
+  const validatePrices = useCallback(() => {
+    const displayCuts = getDisplayCuts();
+    const missing: string[] = [];
+    const allowedZeroCuts = new Set([
+      "Manipuleo de ral",
+      "Frío",
+      "Hueso de rueda",
+      "Grasa de parrillero",
+      "Manipuleo de rueda",
+      "Manipuleo de delantero",
+      "Grasa de delantero",
+      "Hueso de delantero",
+      "Hueso de ral",
+      "Grasa de ral",
+      "Grasa de rueda",
+      "Manipuleo de parrillero",
+    ]);
+
+    displayCuts.forEach((cut) => {
+      const { prices, currency } = cuts[cut];
+      const price = prices[currency];
+      if (!allowedZeroCuts.has(cut) && price <= 0) {
+        missing.push(cut);
+      }
+    });
+    setMissingPriceCuts(missing);
+    return missing.length === 0;
+  }, [cuts, getDisplayCuts]);
+
+  useEffect(() => {
+    if (selectedBusiness && usdPerKg > 0 && mediaResWeight > 0) {
+      validatePrices();
+    }
+  }, [selectedBusiness, mediaResWeight, usdPerKg, validatePrices]);
 
   const handleReset = () => {
     setUsdPerKg(0);
     setMediaResWeight(0);
-    setCuts(initialCuts);
     setSelectedCutImage(null);
     setSelectedCutName(null);
     setSelectedBusiness(null);
@@ -123,6 +249,18 @@ export default function Quotation({ menuOpen }: QuotationProps) {
     setSelectedCutsModal([]);
     setEditBusinessId(null);
     setConfirmDelete(null);
+    setCuts((prev) => {
+      const resetCuts: Record<string, CutState> = {};
+      Object.entries(prev).forEach(([name, cut]) => {
+        resetCuts[name] = {
+          ...cut,
+          prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+          notes: "",
+          currency: "ARS",
+        };
+      });
+      return resetCuts;
+    });
   };
 
   const handleCutChange = (
@@ -131,20 +269,20 @@ export default function Quotation({ menuOpen }: QuotationProps) {
     value: string | number
   ) => {
     setCuts((prev) => {
-      if (initialCuts[cut].isFixedCost && field === "price") return prev;
+      if (prev[cut].isFixedCost && field === "price") return prev;
 
       if (field === "price") {
         const currency = prev[cut].currency;
         const updatedCuts = { ...prev };
 
-        if (initialCuts[cut].macro && Number(value) > 0) {
-          const macro = initialCuts[cut].macro!;
+        if (prev[cut].macro && Number(value) > 0) {
+          const macro = prev[cut].macro!;
           updatedCuts[macro].prices = { ARS: 0, "ARS + IVA": 0, USD: 0 };
         }
 
         if (macros.includes(cut) && Number(value) > 0) {
           Object.keys(updatedCuts).forEach((c) => {
-            if (initialCuts[c].macro === cut) {
+            if (prev[c].macro === cut) {
               updatedCuts[c].prices = { ARS: 0, "ARS + IVA": 0, USD: 0 };
             }
           });
@@ -184,34 +322,6 @@ export default function Quotation({ menuOpen }: QuotationProps) {
     setSelectedCutName(cut);
   };
 
-  const getDisplayCuts = () => {
-    const business = businesses.find((b) => b.id === selectedBusiness);
-    if (!business) return [];
-
-    const displayCuts: string[] = [];
-    macros.forEach((macro) => {
-      const subCuts = Object.keys(initialCuts).filter(
-        (cut) =>
-          initialCuts[cut].macro === macro && !initialCuts[cut].isFixedCost
-      );
-      const hasSelectedSubCut = subCuts.some((cut) =>
-        business.cuts.includes(cut)
-      );
-
-      if (!hasSelectedSubCut) {
-        displayCuts.push(macro);
-      } else {
-        Object.keys(initialCuts).forEach((cut) => {
-          if (initialCuts[cut].macro === macro) {
-            displayCuts.push(cut);
-          }
-        });
-      }
-    });
-    displayCuts.push("Frío");
-    return displayCuts;
-  };
-
   const calculateTotalUSD = () => {
     if (!dollarRate) return "0.00";
     let total = 0;
@@ -243,13 +353,12 @@ export default function Quotation({ menuOpen }: QuotationProps) {
   const calculateTotalPercentage = () => {
     const displayCuts = getDisplayCuts();
     return displayCuts
-      .reduce((sum, cut) => sum + initialCuts[cut].percentage, 0)
+      .reduce((sum, cut) => sum + cuts[cut].percentage, 0)
       .toFixed(2);
   };
 
   const handleBusinessSelect = (businessId: string) => {
     setSelectedBusiness(businessId);
-    setCuts(initialCuts);
   };
 
   const openBusinessModal = (mode: "add" | "edit", id?: string) => {
@@ -276,12 +385,35 @@ export default function Quotation({ menuOpen }: QuotationProps) {
     }
     try {
       if (editBusinessId) {
-        const { error } = await supabase
+        await supabase
+          .from("business_cuts")
+          .delete()
+          .eq("business_id", editBusinessId);
+
+        const { error: updateError } = await supabase
           .from("businesses")
-          .update({ name: businessName, cuts: selectedCutsModal })
+          .update({ name: businessName })
           .eq("id", editBusinessId)
           .eq("user_id", userId);
-        if (error) throw new Error(`Error updating business: ${error.message}`);
+
+        if (updateError)
+          throw new Error(`Error updating business: ${updateError.message}`);
+
+        if (selectedCutsModal.length > 0) {
+          const { error: insertError } = await supabase
+            .from("business_cuts")
+            .insert(
+              selectedCutsModal.map((cutId) => ({
+                business_id: editBusinessId,
+                cut_id: cutId,
+              }))
+            );
+          if (insertError)
+            throw new Error(
+              `Error inserting business cuts: ${insertError.message}`
+            );
+        }
+
         setBusinesses(
           businesses.map((b) =>
             b.id === editBusinessId
@@ -289,23 +421,52 @@ export default function Quotation({ menuOpen }: QuotationProps) {
               : b
           )
         );
+        setLastAction("updated"); // Establece la acción como actualización
       } else {
         const { data, error } = await supabase
           .from("businesses")
-          .insert([
-            { name: businessName, cuts: selectedCutsModal, user_id: userId },
-          ])
-          .select();
+          .insert([{ name: businessName, user_id: userId }])
+          .select()
+          .single();
+
         if (error) throw new Error(`Error adding business: ${error.message}`);
-        if (data) {
-          setBusinesses([...businesses, data[0]]);
-          setSelectedBusiness(data[0].id);
+
+        if (data && selectedCutsModal.length > 0) {
+          const { error: insertError } = await supabase
+            .from("business_cuts")
+            .insert(
+              selectedCutsModal.map((cutId) => ({
+                business_id: data.id,
+                cut_id: cutId,
+              }))
+            );
+          if (insertError)
+            throw new Error(
+              `Error inserting business cuts: ${insertError.message}`
+            );
         }
+
+        setBusinesses([
+          ...businesses,
+          { id: data.id, name: businessName, cuts: selectedCutsModal },
+        ]);
+        setBusinessHasQuotations((prev) => ({
+          ...prev,
+          [data.id]: false,
+        }));
+        setSelectedBusiness(data.id);
+        setLastAction("created"); // Establece la acción como creación
       }
       setShowBusinessModal(false);
+      setShowBusinessSuccessPopup(true);
     } catch (error) {
       console.error(error);
-      alert("No se pudo guardar el negocio.");
+      setBusinessErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "No se pudo guardar el negocio."
+      );
+      setShowBusinessErrorPopup(true);
     }
   };
 
@@ -314,24 +475,152 @@ export default function Quotation({ menuOpen }: QuotationProps) {
       setConfirmDelete(id);
       return;
     }
+
+    // Verificar si el negocio está asociado a alguna cotización
+    const { data: quotations, error: quotationError } = await supabase
+      .from("quotations")
+      .select("id")
+      .eq("business_id", id)
+      .limit(1);
+
+    if (quotationError) {
+      console.error("Error checking quotations:", quotationError);
+      setBusinessErrorMessage(
+        quotationError instanceof Error
+          ? quotationError.message
+          : "Error al verificar cotizaciones asociadas."
+      );
+      setShowBusinessErrorPopup(true);
+      setConfirmDelete(null);
+      setEditBusinessId(null);
+      return;
+    }
+
+    if (quotations && quotations.length > 0) {
+      setShowBusinessInUsePopup(true);
+      setConfirmDelete(null);
+      setEditBusinessId(null);
+      return;
+    }
+
+    // Si no hay cotizaciones asociadas, proceder con la eliminación
     const { error } = await supabase
       .from("businesses")
       .delete()
       .eq("id", id)
       .eq("user_id", userId);
-    if (error) console.error("Error deleting business:", error);
-    else {
+
+    if (error) {
+      console.error("Error deleting business:", error);
+      setBusinessErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "No se pudo eliminar el negocio."
+      );
+      setShowBusinessErrorPopup(true);
+    } else {
       setBusinesses(businesses.filter((b) => b.id !== id));
       if (selectedBusiness === id) setSelectedBusiness(null);
       setShowBusinessModal(false);
       setConfirmDelete(null);
+      setEditBusinessId(null);
+      setBusinessHasQuotations((prev) => {
+        const updated = { ...prev };
+        delete updated[id];
+        return updated;
+      });
+      setLastAction("deleted"); // Establece la acción como eliminación
+      setShowBusinessSuccessPopup(true);
     }
   };
 
-  const toggleCutSelection = (cut: string) => {
+  const toggleCutSelection = (cutId: string) => {
     setSelectedCutsModal((prev) =>
-      prev.includes(cut) ? prev.filter((c) => c !== cut) : [...prev, cut]
+      prev.includes(cutId) ? prev.filter((c) => c !== cutId) : [...prev, cutId]
     );
+  };
+
+  const handleSaveQuotation = async () => {
+    // Validar negocio seleccionado
+    if (!selectedBusiness) {
+      setShowNoBusinessPopup(true);
+      return;
+    }
+
+    // Validar precios
+    if (!validatePrices()) {
+      setShowMissingPricesPopup(true);
+      return;
+    }
+
+    // Si ambas validaciones pasan, guardar la cotización
+    try {
+      const totalInitialUSDNum = mediaResWeight * usdPerKg;
+      const rawTotalCutsUSD = calculateTotalUSD();
+      const totalCutsUSD = Number(
+        rawTotalCutsUSD.replace(/\./g, "").replace(",", ".")
+      );
+      const differenceUSD = totalInitialUSDNum - totalCutsUSD;
+      const differencePercentage =
+        totalInitialUSDNum === 0
+          ? 0
+          : Number(((differenceUSD / totalInitialUSDNum) * 100).toFixed(2));
+
+      const { data: quotationData, error: quotationError } = await supabase
+        .from("quotations")
+        .insert({
+          user_id: userId,
+          business_id: selectedBusiness,
+          media_res_weight: mediaResWeight,
+          usd_per_kg: usdPerKg,
+          dollar_rate: dollarRate || 1200.5,
+          total_initial_usd: totalInitialUSDNum,
+          total_cuts_usd: totalCutsUSD,
+          difference_usd: differenceUSD,
+          difference_percentage: differencePercentage,
+        })
+        .select()
+        .single();
+
+      if (quotationError)
+        throw new Error(`Error saving quotation: ${quotationError.message}`);
+
+      const quotationCuts = getDisplayCuts().map((cut) => ({
+        quotation_id: quotationData.id,
+        cut_id: cuts[cut].id,
+        price_ars: cuts[cut].prices.ARS,
+        price_ars_iva: cuts[cut].prices["ARS + IVA"],
+        price_usd: cuts[cut].prices.USD,
+        currency: cuts[cut].currency,
+        notes: cuts[cut].notes,
+      }));
+
+      const { error: cutsError } = await supabase
+        .from("quotation_cuts")
+        .insert(quotationCuts);
+
+      if (cutsError)
+        throw new Error(`Error saving quotation cuts: ${cutsError.message}`);
+
+      // Actualizar el estado de businessHasQuotations
+      if (selectedBusiness) {
+        setBusinessHasQuotations((prev) => ({
+          ...prev,
+          [selectedBusiness]: true,
+        }));
+      }
+
+      setShowSuccessPopup(true);
+      handleReset();
+    } catch (error) {
+      console.error(error);
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "No se pudo guardar la cotización."
+      );
+      setShowErrorPopup(true);
+    }
   };
 
   if (loading) {
@@ -365,7 +654,7 @@ export default function Quotation({ menuOpen }: QuotationProps) {
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
             <label className="text-[var(--foreground)]">
-              Peso Prom. Media Res (kg):
+              Peso Prom. Media Res (Kg):
             </label>
             <input
               type="number"
@@ -381,7 +670,7 @@ export default function Quotation({ menuOpen }: QuotationProps) {
             />
           </div>
           <div className="flex items-center gap-2">
-            <label className="text-[var(--foreground)]">USD/kg:</label>
+            <label className="text-[var(--foreground)]">USD/Kg:</label>
             <input
               type="number"
               min="0"
@@ -429,7 +718,7 @@ export default function Quotation({ menuOpen }: QuotationProps) {
                 </svg>
                 Agregar
               </button>
-              {selectedBusiness && (
+              {selectedBusiness && !businessHasQuotations[selectedBusiness] && (
                 <button
                   onClick={() => openBusinessModal("edit", selectedBusiness)}
                   className="px-3 py-2 bg-yellow-500 text-white rounded-md hover:bg-yellow-600 transition-all flex items-center gap-1 cursor-pointer"
@@ -477,7 +766,7 @@ export default function Quotation({ menuOpen }: QuotationProps) {
               Limpiar
             </button>
             <button
-              onClick={() => alert("Guardando histórico...")}
+              onClick={handleSaveQuotation}
               className="px-4 py-2 bg-green-400 text-white rounded-md hover:bg-green-500 transition-all flex items-center gap-1 cursor-pointer"
             >
               <svg
@@ -513,7 +802,187 @@ export default function Quotation({ menuOpen }: QuotationProps) {
         onSave={saveBusiness}
         onDelete={deleteBusiness}
         confirmDelete={confirmDelete}
+        cuts={Object.fromEntries(
+          Object.entries(cuts).map(([name, cut]) => [
+            name,
+            {
+              id: cut.id,
+              name,
+              percentage: cut.percentage,
+              macro: cut.macro ?? null,
+              is_fixed_cost: cut.isFixedCost,
+            },
+          ])
+        )}
       />
+
+      {showMissingPricesPopup && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-30">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md shadow-lg">
+            <h3 className="text-xl font-semibold text-[var(--foreground)] mb-4">
+              Precios Faltantes
+            </h3>
+            <p className="text-lg text-[var(--foreground)] mb-6">
+              Por favor, completa los precios de los siguientes cortes para
+              poder guardar la cotización:
+            </p>
+            <ul className="list-disc pl-5 mb-6 text-[var(--foreground)]">
+              {missingPriceCuts.map((cut) => (
+                <li key={cut}>{cut}</li>
+              ))}
+            </ul>
+            <div className="flex justify-end">
+              <button
+                onClick={() => setShowMissingPricesPopup(false)}
+                className="px-5 py-2 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400 transition-all cursor-pointer text-lg font-medium"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSuccessPopup && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-30">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md shadow-lg">
+            <h3 className="text-xl font-semibold text-[var(--foreground)] mb-4">
+              Éxito
+            </h3>
+            <p className="text-lg text-[var(--foreground)] mb-6">
+              Cotización guardada exitosamente. Podras verla en historial de
+              cotizaciones.
+            </p>
+            <div className="flex justify-end">
+              <button
+                onClick={() => setShowSuccessPopup(false)}
+                className="px-5 py-2 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400 transition-all cursor-pointer text-lg font-medium"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showErrorPopup && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-30">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md shadow-lg">
+            <h3 className="text-xl font-semibold text-[var(--foreground)] mb-4">
+              Error
+            </h3>
+            <p className="text-lg text-[var(--foreground)] mb-6">
+              {errorMessage}
+            </p>
+            <div className="flex justify-end">
+              <button
+                onClick={() => setShowErrorPopup(false)}
+                className="px-5 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-all cursor-pointer text-lg font-medium"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBusinessSuccessPopup && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-30">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md shadow-lg">
+            <h3 className="text-xl font-semibold text-[var(--foreground)] mb-4">
+              Éxito
+            </h3>
+            {(() => {
+              let successMessage = "Negocio creado exitosamente.";
+              if (lastAction === "updated") {
+                successMessage = "Negocio actualizado exitosamente.";
+              } else if (lastAction === "deleted") {
+                successMessage = "Negocio eliminado exitosamente.";
+              }
+              return (
+                <p className="text-lg text-[var(--foreground)] mb-6">
+                  {successMessage}
+                </p>
+              );
+            })()}
+            <div className="flex justify-end">
+              <button
+                onClick={() => {
+                  setShowBusinessSuccessPopup(false);
+                  setLastAction(null); // Restablece lastAction al cerrar
+                }}
+                className="px-5 py-2 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400 transition-all cursor-pointer text-lg font-medium"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBusinessErrorPopup && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-30">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md shadow-lg">
+            <h3 className="text-xl font-semibold text-[var(--foreground)] mb-4">
+              Error
+            </h3>
+            <p className="text-lg text-[var(--foreground)] mb-6">
+              {businessErrorMessage}
+            </p>
+            <div className="flex justify-end">
+              <button
+                onClick={() => setShowBusinessErrorPopup(false)}
+                className="px-5 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-all cursor-pointer text-lg font-medium"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showNoBusinessPopup && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-30">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md shadow-lg">
+            <h3 className="text-xl font-semibold text-[var(--foreground)] mb-4">
+              Negocio Faltante
+            </h3>
+            <p className="text-lg text-[var(--foreground)] mb-6">
+              Por favor, selecciona un negocio antes de guardar la cotización.
+            </p>
+            <div className="flex justify-end">
+              <button
+                onClick={() => setShowNoBusinessPopup(false)}
+                className="px-5 py-2 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400 transition-all cursor-pointer text-lg font-medium"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBusinessInUsePopup && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-30">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md shadow-lg">
+            <h3 className="text-xl font-semibold text-[var(--foreground)] mb-4">
+              Lo sentimos
+            </h3>
+            <p className="text-lg text-[var(--foreground)] mb-6">
+              Este negocio no puede ser eliminado porque está asociado a una o
+              más cotizaciones.
+            </p>
+            <div className="flex justify-end">
+              <button
+                onClick={() => setShowBusinessInUsePopup(false)}
+                className="px-5 py-2 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400 transition-all cursor-pointer text-lg font-medium"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-1 overflow-hidden">
         <aside className="w-[28rem] sm:w-[30rem] lg:w-[29rem] bg-[var(--background)] border-r border-gray-200 dark:border-gray-700 p-4 overflow-y-auto shrink-0">
@@ -536,23 +1005,20 @@ export default function Quotation({ menuOpen }: QuotationProps) {
               <div className="space-y-2">
                 {getDisplayCuts().map((cut) => {
                   const isMacro = macros.includes(cut);
-                  const subCuts = Object.keys(initialCuts).filter(
-                    (c) =>
-                      initialCuts[c].macro === cut &&
-                      !initialCuts[c].isFixedCost
+                  const subCuts = Object.keys(cuts).filter(
+                    (c) => cuts[c].macro === cut && !cuts[c].isFixedCost
                   );
                   const hasSubCutPrices = subCuts.some(
                     (c) => cuts[c].prices[cuts[c].currency] > 0
                   );
                   const isDisabled = isMacro && hasSubCutPrices;
+                  const hasMissingPrice = missingPriceCuts.includes(cut);
 
                   return (
                     <CutItem
                       key={cut}
                       cut={cut}
-                      display={`${cut} (${initialCuts[cut].percentage.toFixed(
-                        2
-                      )}%)`}
+                      display={`${cut} (${cuts[cut].percentage.toFixed(2)}%)`}
                       onChange={handleCutChange}
                       data={cuts[cut]}
                       image={imageMap[cut]}
@@ -560,6 +1026,7 @@ export default function Quotation({ menuOpen }: QuotationProps) {
                         imageMap[cut] ? () => handleCutSelect(cut) : undefined
                       }
                       isDisabled={isDisabled}
+                      className={hasMissingPrice ? "border-red-500" : ""}
                     />
                   );
                 })}
@@ -570,8 +1037,8 @@ export default function Quotation({ menuOpen }: QuotationProps) {
               </p>
             ) : (
               <p className="text-[var(--foreground)] text-center">
-                Ingresa el peso de la media res y el valor por kg en USD para
-                comenzar.
+                Ingresa el peso promedio de la media res y el valor por kg en
+                dólares para comenzar.
               </p>
             )}
           </div>
@@ -616,11 +1083,11 @@ export default function Quotation({ menuOpen }: QuotationProps) {
                 <div className="font-mono text-[var(--foreground)]">
                   {(() => {
                     const macro =
-                      initialCuts[selectedCutName].macro || selectedCutName;
-                    const relatedCuts = Object.keys(initialCuts).filter(
+                      cuts[selectedCutName].macro || selectedCutName;
+                    const relatedCuts = Object.keys(cuts).filter(
                       (cut) =>
-                        (initialCuts[cut].macro === macro || cut === macro) &&
-                        !initialCuts[cut].isFixedCost
+                        (cuts[cut].macro === macro || cut === macro) &&
+                        !cuts[cut].isFixedCost
                     );
                     return relatedCuts.map((cut) => (
                       <p
