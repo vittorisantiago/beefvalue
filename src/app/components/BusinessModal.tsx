@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { initialCuts } from "@/lib/cuts";
+import { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
 
 interface BusinessModalProps {
   show: boolean;
@@ -11,11 +11,21 @@ interface BusinessModalProps {
   businessNameError: boolean;
   setBusinessNameError: (error: boolean) => void;
   selectedCutsModal: string[];
-  toggleCutSelection: (cut: string) => void;
+  toggleCutSelection: (cutId: string) => void;
   editBusinessId: string | null;
   onSave: () => void;
   onDelete: (id: string) => void;
   confirmDelete: string | null;
+  cuts: Record<
+    string,
+    {
+      id: string;
+      name: string;
+      percentage: number;
+      macro: string | null;
+      is_fixed_cost: boolean;
+    }
+  >;
 }
 
 export default function BusinessModal({
@@ -30,33 +40,48 @@ export default function BusinessModal({
   editBusinessId,
   onSave,
   onDelete,
+  confirmDelete,
 }: BusinessModalProps) {
-  const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
+  const [availableCuts, setAvailableCuts] = useState<
+    {
+      id: string;
+      name: string;
+      percentage: number;
+      macro: string | null;
+      is_fixed_cost: boolean;
+    }[]
+  >([]);
 
-  if (!show) return null;
-
-  const selectableCuts = Object.keys(initialCuts).filter(
-    (cut) =>
-      !["Ral", "Rueda", "Parrillero", "Delantero"].includes(cut) &&
-      !initialCuts[cut].isFixedCost
-  );
+  useEffect(() => {
+    const loadCuts = async () => {
+      const { data, error } = await supabase
+        .from("cuts")
+        .select("*")
+        .not("name", "in", '("Ral","Rueda","Parrillero","Delantero")')
+        .eq("is_fixed_cost", false);
+      if (error) console.error("Error fetching cuts:", error);
+      else setAvailableCuts(data || []);
+    };
+    loadCuts();
+  }, []);
 
   const handleDeleteClick = () => {
     if (editBusinessId) {
-      setShowDeleteConfirmation(true);
+      onDelete(editBusinessId); // Esto establece confirmDelete en Quotation.tsx
     }
   };
 
   const confirmDeleteAction = () => {
     if (editBusinessId) {
-      onDelete(editBusinessId);
-      setShowDeleteConfirmation(false);
+      onDelete(editBusinessId); // Llama a onDelete nuevamente para confirmar la eliminación
     }
   };
 
   const cancelDeleteAction = () => {
-    setShowDeleteConfirmation(false);
+    onDelete(""); // Restablece confirmDelete a null
   };
+
+  if (!show) return null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-20">
@@ -84,15 +109,15 @@ export default function BusinessModal({
           </p>
         )}
         <div className="space-y-3 max-h-64 overflow-y-auto font-mono text-lg text-[var(--foreground)]">
-          {selectableCuts.map((cut) => (
-            <label key={cut} className="flex items-center gap-3">
+          {availableCuts.map((cut) => (
+            <label key={cut.id} className="flex items-center gap-3">
               <input
                 type="checkbox"
-                checked={selectedCutsModal.includes(cut)}
-                onChange={() => toggleCutSelection(cut)}
+                checked={selectedCutsModal.includes(cut.id)}
+                onChange={() => toggleCutSelection(cut.id)}
                 className="h-5 w-5 text-[var(--primary)] focus:ring-[var(--primary)] rounded"
               />
-              <span>{cut}</span>
+              <span>{cut.name}</span>
             </label>
           ))}
         </div>
@@ -149,7 +174,7 @@ export default function BusinessModal({
       </div>
 
       {/* Pop-up de Confirmación para Eliminar */}
-      {showDeleteConfirmation && (
+      {confirmDelete && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-30">
           <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md shadow-lg">
             <h3 className="text-xl font-semibold text-[var(--foreground)] mb-4">
