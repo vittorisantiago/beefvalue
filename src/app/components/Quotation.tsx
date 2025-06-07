@@ -651,6 +651,9 @@ export default function Quotation({ menuOpen }: QuotationProps) {
   return (
     <div className="flex flex-1 flex-col p-6 overflow-hidden">
       <div className="mb-6">
+        <h1 className="text-3xl font-bold text-[var(--foreground)] mb-6">
+          Gestionar Cotización
+        </h1>
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
             <label className="text-[var(--foreground)]">
