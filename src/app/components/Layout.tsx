@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
 import { useState, useEffect } from "react";
+import Link from "next/link";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -12,7 +13,7 @@ interface LayoutProps {
 export default function Layout({ children }: LayoutProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const [isMenuOpen, setIsMenuOpen] = useState(true); // Valor inicial seguro
+  const [isMenuOpen, setIsMenuOpen] = useState(true);
   const [showConfirmLogout, setShowConfirmLogout] = useState(false);
   const [tooltip, setTooltip] = useState({
     visible: false,
@@ -20,8 +21,8 @@ export default function Layout({ children }: LayoutProps) {
     x: 0,
     y: 0,
   });
+  const [permissions, setPermissions] = useState<string[]>([]);
 
-  // Leer el estado del menú desde localStorage al montar el componente
   useEffect(() => {
     const savedState = localStorage.getItem("menuOpen");
     if (savedState !== null) {
@@ -29,10 +30,60 @@ export default function Layout({ children }: LayoutProps) {
     }
   }, []);
 
-  // Guardar el estado del menú en localStorage cada vez que cambie
   useEffect(() => {
     localStorage.setItem("menuOpen", JSON.stringify(isMenuOpen));
   }, [isMenuOpen]);
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) {
+        router.push("/login");
+        return;
+      }
+      const userId = session.user.id;
+      console.log("Checking user:", userId);
+
+      const { data: groupData, error: groupError } = await supabase
+        .from("user_groups")
+        .select("group_id")
+        .eq("user_id", userId);
+      if (groupError) {
+        console.error("Group fetch error:", groupError.message);
+        return;
+      }
+      if (groupData && groupData.length > 0) {
+        const groupIds = groupData.map((g) => g.group_id);
+
+        const { data: permissionData, error: permError } = await supabase
+          .from("group_permissions")
+          .select("permission_id")
+          .in("group_id", groupIds);
+        if (permError) {
+          console.error("Permission fetch error:", permError.message);
+          return;
+        }
+        const permissionIds = permissionData.map((p) => p.permission_id);
+
+        const { data: permNames, error: nameError } = await supabase
+          .from("permissions")
+          .select("name")
+          .in("id", permissionIds);
+        if (nameError) {
+          console.error("Permission name fetch error:", nameError.message);
+          return;
+        }
+        const uniquePermissions = [...new Set(permNames.map((p) => p.name))];
+        console.log("User permissions:", uniquePermissions);
+        setPermissions(uniquePermissions);
+      } else {
+        setPermissions([]);
+      }
+    };
+    checkAuth();
+  }, [router]);
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -44,18 +95,19 @@ export default function Layout({ children }: LayoutProps) {
     {
       name: "Inicio",
       href: "/",
+      permission: null,
       icon: (
         <svg
           className="w-5 h-5 mr-3"
           fill="none"
           stroke="currentColor"
-          viewBox="0 0 24 24"
           strokeWidth="2"
+          viewBox="0 0 24 24"
         >
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
-            d="M3 12l9-9 9 9M4 10v10a1 1 0 001 1h5v-6h4v6h5a1 1 0 001-1V10"
+            d="M3 9.75L12 3l9 6.75M4.5 10.5V20a1 1 0 001 1H9a1 1 0 001-1v-5h4v5a1 1 0 001 1h3.5a1 1 0 001-1v-9.5"
           />
         </svg>
       ),
@@ -63,6 +115,7 @@ export default function Layout({ children }: LayoutProps) {
     {
       name: "Gestionar Cotización",
       href: "/nueva-cotizacion",
+      permission: "Gestionar Cotización",
       icon: (
         <svg
           className="w-5 h-5 mr-3"
@@ -82,6 +135,7 @@ export default function Layout({ children }: LayoutProps) {
     {
       name: "Historial Cotizaciones",
       href: "/historial",
+      permission: "Historial Cotizaciones",
       icon: (
         <svg
           className="w-5 h-5 mr-3"
@@ -101,6 +155,7 @@ export default function Layout({ children }: LayoutProps) {
     {
       name: "Reportes",
       href: "/reportes",
+      permission: "Reportes",
       icon: (
         <svg
           className="w-5 h-5 mr-3"
@@ -120,6 +175,7 @@ export default function Layout({ children }: LayoutProps) {
     {
       name: "Gestionar Usuarios",
       href: "/gestion-usuarios",
+      permission: "Gestionar Usuarios",
       icon: (
         <svg
           className="w-5 h-5 mr-3"
@@ -137,6 +193,10 @@ export default function Layout({ children }: LayoutProps) {
       ),
     },
   ];
+
+  const filteredMenuItems = menuItems.filter(
+    (item) => item.permission === null || permissions.includes(item.permission)
+  );
 
   return (
     <>
@@ -160,7 +220,7 @@ export default function Layout({ children }: LayoutProps) {
                 <h1 className="text-xl font-bold">BeefValue</h1>
               </div>
             ) : (
-              <div className="w-8 h-8" /> // Espacio vacío para mantener el diseño
+              <div className="w-8 h-8" />
             )}
             <button
               onClick={() => setIsMenuOpen(!isMenuOpen)}
@@ -183,18 +243,19 @@ export default function Layout({ children }: LayoutProps) {
           </div>
 
           <nav className="mt-4 flex flex-col flex-1">
-            {menuItems.map((item, index) => (
-              <a
+            {filteredMenuItems.map((item, index) => (
+              <Link
                 key={index}
                 href={item.href}
-                onClick={(e) => {
-                  e.preventDefault();
-                  localStorage.setItem("menuOpen", JSON.stringify(isMenuOpen));
-                  router.push(item.href);
-                  if (!isMenuOpen) {
-                    setIsMenuOpen(false); // Asegurar que el menú permanezca colapsado
-                  }
-                }}
+                prefetch={false}
+                className={`flex items-center p-3 rounded-md transition-colors duration-300 ${
+                  isMenuOpen ? "justify-start" : "justify-center"
+                } ${
+                  pathname === item.href
+                    ? "bg-gradient-to-r from-sky-300/10 to-sky-600/20 text-sky-200 border-l-4 border-sky-400/60"
+                    : "text-gray-300 hover:bg-gradient-to-r from-gray-700 to-gray-800 hover:text-white"
+                }`}
+                style={{ display: "flex", position: "relative" }}
                 onMouseEnter={(e) => {
                   if (!isMenuOpen) {
                     const rect = e.currentTarget.getBoundingClientRect();
@@ -209,17 +270,6 @@ export default function Layout({ children }: LayoutProps) {
                 onMouseLeave={() => {
                   if (!isMenuOpen) setTooltip({ ...tooltip, visible: false });
                 }}
-                className={`flex items-center p-3 rounded-md transition-colors duration-300 ${
-                  isMenuOpen ? "justify-start" : "justify-center"
-                } ${
-                  pathname === item.href
-                    ? "bg-gradient-to-r from-sky-300/10 to-sky-600/20 text-sky-200 border-l-4 border-sky-400/60"
-                    : "text-gray-300 hover:bg-gradient-to-r from-gray-700 to-gray-800 hover:text-white"
-                }`}
-                style={{
-                  display: "flex",
-                  position: "relative",
-                }}
               >
                 {item.icon}
                 <span
@@ -229,10 +279,9 @@ export default function Layout({ children }: LayoutProps) {
                 >
                   {item.name}
                 </span>
-              </a>
+              </Link>
             ))}
 
-            {/* Cerrar Sesión al final */}
             <button
               onClick={() => setShowConfirmLogout(true)}
               onMouseEnter={(e) => {
@@ -282,7 +331,6 @@ export default function Layout({ children }: LayoutProps) {
           </nav>
         </div>
 
-        {/* Contenido Principal */}
         <div
           className={`flex-1 transition-all duration-300 ${
             isMenuOpen ? "ml-64" : "ml-14"
@@ -291,14 +339,13 @@ export default function Layout({ children }: LayoutProps) {
           {children}
         </div>
 
-        {/* Tooltip */}
         {tooltip.visible && !isMenuOpen && (
           <div
             className="absolute bg-gray-800 text-white text-sm px-3 py-1 rounded-md shadow-lg whitespace-nowrap"
             style={{
               top: tooltip.y,
-              left: tooltip.x + 5, // Ajustar para que aparezca a la derecha
-              transform: "translateY(-50%)", // Centrar verticalmente respecto al ícono
+              left: tooltip.x + 5,
+              transform: "translateY(-50%)",
               zIndex: 1000,
             }}
             onMouseEnter={() => setTooltip({ ...tooltip, visible: true })}
@@ -308,35 +355,34 @@ export default function Layout({ children }: LayoutProps) {
             <div className="absolute top-1/2 left-[-5px] transform -translate-y-1/2 w-0 h-0 border-t-[5px] border-b-[5px] border-r-[5px] border-t-transparent border-b-transparent border-r-gray-800"></div>
           </div>
         )}
-      </div>
 
-      {/* Modal de confirmación */}
-      {showConfirmLogout && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-[#1f2937] text-white rounded-md p-6 w-full max-w-sm shadow-xl">
-            <p className="text-base mb-6 text-gray-200">
-              ¿Estás seguro de que deseas cerrar sesión? <br />
-              <span className="text-sm text-gray-400">
-                Los datos no guardados se perderán.
-              </span>
-            </p>
-            <div className="flex justify-end gap-4">
-              <button
-                onClick={() => setShowConfirmLogout(false)}
-                className="px-4 py-2 text-sm bg-gray-600 hover:bg-gray-700 rounded-md transition cursor-pointer"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleSignOut}
-                className="px-4 py-2 text-sm bg-red-600 hover:bg-red-700 text-white rounded-md transition cursor-pointer"
-              >
-                Sí, cerrar sesión
-              </button>
+        {showConfirmLogout && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+            <div className="bg-[#1f2937] text-white rounded-md p-6 w-full max-w-sm shadow-xl">
+              <p className="text-base mb-6 text-gray-200">
+                ¿Estás seguro de que deseas cerrar sesión? <br />
+                <span className="text-sm text-gray-400">
+                  Los datos no guardados se perderán.
+                </span>
+              </p>
+              <div className="flex justify-end gap-4">
+                <button
+                  onClick={() => setShowConfirmLogout(false)}
+                  className="px-4 py-2 text-sm bg-gray-600 hover:bg-gray-700 rounded-md cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleSignOut}
+                  className="px-4 py-2 text-sm bg-red-600 hover:bg-red-700 text-white rounded-md cursor-pointer"
+                >
+                  Sí, cerrar sesión
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </>
   );
 }
