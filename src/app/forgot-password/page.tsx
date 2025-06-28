@@ -13,17 +13,13 @@ export default function ForgotPasswordPage() {
   const router = useRouter();
 
   const validateForm = () => {
-    const newErrors: typeof errors = {};
-
     if (!email) {
-      newErrors.email = "El correo electrónico es obligatorio.";
-    } else if (!email.includes("@") || !email.includes(".")) {
-      newErrors.email =
-        "El correo debe incluir un '@' y un dominio válido (ej. tu@correo.com).";
+      return "Por favor completa el correo electrónico.";
     }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    if (!email.includes("@") || !email.includes(".")) {
+      return "El correo electrónico no es válido.";
+    }
+    return "";
   };
 
   const handleForgotPassword = async (e: React.FormEvent) => {
@@ -31,7 +27,9 @@ export default function ForgotPasswordPage() {
     setErrors({});
     setSuccess(false);
 
-    if (!validateForm()) {
+    const validationMsg = validateForm();
+    if (validationMsg) {
+      setErrors({ general: validationMsg });
       return;
     }
 
@@ -114,20 +112,7 @@ export default function ForgotPasswordPage() {
             noValidate
           >
             {errors.general && (
-              <div className="bg-red-900/20 border border-red-700 rounded-md p-3 text-sm text-red-400 animate-fade-in">
-                <svg
-                  className="inline w-5 h-5 mr-2 -mt-1"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
+              <div className="bg-red-900/20 border border-red-700 rounded-md p-3 text-center text-red-300 font-medium mb-2 animate-fade-in">
                 {errors.general}
               </div>
             )}
@@ -145,12 +130,10 @@ export default function ForgotPasswordPage() {
                 value={email}
                 onChange={(e) => {
                   setEmail(e.target.value);
-                  if (errors.email) validateForm();
+                  if (errors.email || errors.general) setErrors({});
                 }}
                 placeholder="tu@correo.com"
-                className={`w-full px-4 py-2.5 bg-gray-900 border ${
-                  errors.email ? "border-red-600" : "border-gray-600"
-                } rounded-md text-gray-200 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all duration-150 placeholder:text-gray-500`}
+                className="w-full px-4 py-2.5 bg-gray-900 border border-gray-600 rounded-md text-gray-200 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all duration-150 placeholder:text-gray-500"
                 aria-describedby={errors.email ? "email-error" : undefined}
               />
               {errors.email && (
@@ -182,7 +165,13 @@ export default function ForgotPasswordPage() {
             >
               Enviar Enlace de Recuperación
             </button>
-
+            <button
+              type="button"
+              onClick={() => router.push("/login")}
+              className="w-full px-4 py-2 bg-gray-700 text-gray-200 rounded-md font-medium hover:bg-gray-600 transition-all duration-150 cursor-pointer"
+            >
+              Volver a Login
+            </button>
             <button
               type="button"
               onClick={() => router.push("/landing")}
