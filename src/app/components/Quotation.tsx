@@ -59,6 +59,7 @@ export default function Quotation({ menuOpen }: QuotationProps) {
   const [lastAction, setLastAction] = useState<
     "created" | "updated" | "deleted" | null
   >(null);
+  const [showConfirmReset, setShowConfirmReset] = useState(false);
 
   const imageMap: Record<string, string> = {
     "Colita de cuadril": "/images/colita_de_cuadril.png",
@@ -749,7 +750,7 @@ export default function Quotation({ menuOpen }: QuotationProps) {
         {usdPerKg > 0 && mediaResWeight > 0 && (
           <div className="flex justify-end gap-4 mt-4">
             <button
-              onClick={handleReset}
+              onClick={() => setShowConfirmReset(true)}
               className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-all flex items-center gap-1 cursor-pointer"
             >
               <svg
@@ -848,18 +849,18 @@ export default function Quotation({ menuOpen }: QuotationProps) {
 
       {showSuccessPopup && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-30">
-          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md shadow-lg">
-            <h3 className="text-xl font-semibold text-[var(--foreground)] mb-4">
-              Éxito
-            </h3>
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md shadow-lg text-center">
+            <svg className="w-14 h-14 mx-auto mb-4 text-emerald-400 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+            </svg>
+            <h3 className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mb-2">¡Éxito!</h3>
             <p className="text-lg text-[var(--foreground)] mb-6">
-              Cotización guardada exitosamente. Podras verla en historial de
-              cotizaciones.
+              Cotización guardada exitosamente. Podrás verla en historial de cotizaciones.
             </p>
-            <div className="flex justify-end">
+            <div className="flex justify-center">
               <button
                 onClick={() => setShowSuccessPopup(false)}
-                className="px-5 py-2 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400 transition-all cursor-pointer text-lg font-medium"
+                className="px-5 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 transition-all cursor-pointer text-lg font-medium"
               >
                 Cerrar
               </button>
@@ -891,10 +892,11 @@ export default function Quotation({ menuOpen }: QuotationProps) {
 
       {showBusinessSuccessPopup && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-30">
-          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md shadow-lg">
-            <h3 className="text-xl font-semibold text-[var(--foreground)] mb-4">
-              Éxito
-            </h3>
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md shadow-lg text-center">
+            <svg className="w-14 h-14 mx-auto mb-4 text-emerald-400 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+            </svg>
+            <h3 className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mb-2">¡Éxito!</h3>
             {(() => {
               let successMessage = "Negocio creado exitosamente.";
               if (lastAction === "updated") {
@@ -908,13 +910,13 @@ export default function Quotation({ menuOpen }: QuotationProps) {
                 </p>
               );
             })()}
-            <div className="flex justify-end">
+            <div className="flex justify-center">
               <button
                 onClick={() => {
                   setShowBusinessSuccessPopup(false);
                   setLastAction(null); // Restablece lastAction al cerrar
                 }}
-                className="px-5 py-2 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400 transition-all cursor-pointer text-lg font-medium"
+                className="px-5 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 transition-all cursor-pointer text-lg font-medium"
               >
                 Cerrar
               </button>
@@ -946,14 +948,15 @@ export default function Quotation({ menuOpen }: QuotationProps) {
 
       {showNoBusinessPopup && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-30">
-          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md shadow-lg">
-            <h3 className="text-xl font-semibold text-[var(--foreground)] mb-4">
-              Negocio Faltante
-            </h3>
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md shadow-lg text-center">
+            <svg className="w-14 h-14 mx-auto mb-4 text-yellow-400 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <h3 className="text-2xl font-bold text-yellow-600 dark:text-yellow-400 mb-2">Negocio Faltante</h3>
             <p className="text-lg text-[var(--foreground)] mb-6">
               Por favor, selecciona un negocio antes de guardar la cotización.
             </p>
-            <div className="flex justify-end">
+            <div className="flex justify-center">
               <button
                 onClick={() => setShowNoBusinessPopup(false)}
                 className="px-5 py-2 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400 transition-all cursor-pointer text-lg font-medium"
@@ -981,6 +984,32 @@ export default function Quotation({ menuOpen }: QuotationProps) {
                 className="px-5 py-2 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400 transition-all cursor-pointer text-lg font-medium"
               >
                 Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showConfirmReset && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md shadow-lg text-center">
+            <svg className="w-12 h-12 mx-auto mb-4 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <h3 className="text-xl font-semibold text-[var(--foreground)] mb-2">¿Limpiar todo?</h3>
+            <p className="text-gray-600 dark:text-gray-300 mb-6">Se borrarán todos los datos ingresados. ¿Estás seguro?</p>
+            <div className="flex justify-center gap-4">
+              <button
+                onClick={() => setShowConfirmReset(false)}
+                className="px-5 py-2 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400 transition-all cursor-pointer text-lg font-medium"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => { setShowConfirmReset(false); handleReset(); }}
+                className="px-5 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-all cursor-pointer text-lg font-medium"
+              >
+                Sí, limpiar
               </button>
             </div>
           </div>
