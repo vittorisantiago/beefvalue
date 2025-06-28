@@ -1,12 +1,5 @@
-"use client";
+import NuevaCotizacionClient from "./client";
 
-import Layout from "../components/Layout";
-import Quotation from "../components/Quotation";
-
-export default function NuevaCotizacion() {
-  return (
-    <Layout>
-      <Quotation menuOpen={false} />
-    </Layout>
-  );
+export default function NuevaCotizacionServer() {
+  return <NuevaCotizacionClient />;
 }
