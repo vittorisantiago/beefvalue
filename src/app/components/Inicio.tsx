@@ -41,14 +41,14 @@ export default function Inicio() {
       {/* Tutorial Paso a Paso */}
       <div className="space-y-6">
         <h2 className="text-3xl font-semibold text-center mb-6 opacity-0 translate-y-10 transition-all duration-1000 ease-out animate-on-scroll delay-400">
-          Guía Rápida para Comenzar
+          Guía rápida para comenzar
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-16">
           {/* Paso 1 */}
           <div className="bg-gray-800/50 backdrop-blur-sm p-8 rounded-xl shadow-[0_10px_20px_rgba(0,0,0,0.3)] hover:shadow-[0_15px_30px_rgba(0,0,0,0.4)] transition-all duration-300 w-full h-84 flex flex-col justify-between opacity-0 translate-y-15 transition-all duration-1000 ease-out animate-on-scroll delay-600">
             <div>
               <h3 className="text-xl font-semibold mb-2">
-                Paso 1: Explora el Menú
+                Paso 1: Explora el menú
               </h3>
               <p className="text-gray-400 leading-relaxed text-lg">
                 Encuentra las opciones disponibles en el menú lateral a la
@@ -73,7 +73,7 @@ export default function Inicio() {
           <div className="bg-gray-800/50 backdrop-blur-sm p-8 rounded-xl shadow-[0_10px_20px_rgba(0,0,0,0.3)] hover:shadow-[0_15px_30px_rgba(0,0,0,0.4)] transition-all duration-300 w-full h-84 flex flex-col justify-between opacity-0 translate-y-15 transition-all duration-1000 ease-out animate-on-scroll delay-800">
             <div>
               <h3 className="text-xl font-semibold mb-2">
-                Paso 2: Seleccionar Opción
+                Paso 2: Seleccionar opción
               </h3>
               <p className="text-gray-400 leading-relaxed text-lg">
                 Haz clic en &apos;Gestionar Cotización&apos; desde el menú.
@@ -97,7 +97,7 @@ export default function Inicio() {
           <div className="bg-gray-800/50 backdrop-blur-sm p-8 rounded-xl shadow-[0_10px_20px_rgba(0,0,0,0.3)] hover:shadow-[0_15px_30px_rgba(0,0,0,0.4)] transition-all duration-300 w-full h-84 flex flex-col justify-between opacity-0 translate-y-15 transition-all duration-1000 ease-out animate-on-scroll delay-1000">
             <div>
               <h3 className="text-xl font-semibold mb-2">
-                Paso 3: Completar Datos
+                Paso 3: Completar datos
               </h3>
               <p className="text-gray-400 leading-relaxed text-lg">
                 Ingresa los datos solicitados y selecciona un negocio.
