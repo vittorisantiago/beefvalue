@@ -20,8 +20,11 @@ interface CutItemProps {
   onClick?: () => void;
   image?: string;
   isDisabled?: boolean;
-  hasMissingPrice?: boolean; // Prop existente para resaltar precios faltantes
-  className?: string; // Nueva prop para aceptar clases personalizadas
+  hasMissingPrice?: boolean;
+  className?: string;
+  priceInputRef?: (el: HTMLInputElement | null) => void;
+  onPriceKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+  selectedByBusiness?: boolean;
 }
 
 export default function CutItem({
@@ -32,22 +35,33 @@ export default function CutItem({
   onClick,
   image,
   isDisabled,
-  hasMissingPrice = false,
   className,
+  priceInputRef,
+  onPriceKeyDown,
+  selectedByBusiness = false,
 }: CutItemProps) {
   const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
     if (e.target.value === "0") e.target.value = "";
   };
 
+  // Mostrar vacío si el valor es 0 y el usuario borró todo
+  const getPriceValue = () => {
+    const v = data.prices[data.currency];
+    // Si el valor es 0, mostrar vacío, salvo que el usuario haya escrito 0 explícitamente
+    return v === 0 ? "" : v;
+  };
+
   return (
     <div
-      className={`bg-white dark:bg-gray-800 border rounded-md p-2 ${
-        isDisabled
-          ? "border-gray-300 dark:border-gray-700 opacity-50"
-          : hasMissingPrice
-          ? "border-red-500 border-2"
-          : "border-gray-400 dark:border-gray-500"
-      } ${className || ""}`}
+      className={`bg-white dark:bg-gray-800 rounded-md p-2 
+        ${
+          isDisabled
+            ? "border border-gray-300 dark:border-gray-700 opacity-50"
+            : selectedByBusiness
+            ? "border-2 border-blue-600"
+            : "border border-gray-400 dark:border-gray-500"
+        }
+        ${className || ""}`}
     >
       <div
         onClick={onClick}
@@ -74,13 +88,19 @@ export default function CutItem({
               type="number"
               min="0"
               step="0.01"
-              value={data.prices[data.currency]}
+              value={getPriceValue()}
               onFocus={handleFocus}
-              onChange={(e) => onChange(cut, "price", e.target.value)}
+              onChange={(e) => {
+                // Si el input está vacío, pasar 0, pero mostrar vacío
+                const val = e.target.value;
+                onChange(cut, "price", val === "" ? 0 : val);
+              }}
               disabled={isDisabled || data.isFixedCost}
               className={`w-full sm:w-auto flex-1 px-2 py-1 bg-transparent text-[var(--foreground)] focus:ring-2 focus:ring-[var(--primary)] outline-none ${
                 isDisabled || data.isFixedCost ? "cursor-not-allowed" : ""
               }`}
+              ref={priceInputRef}
+              onKeyDown={onPriceKeyDown}
             />
           </div>
           <select
