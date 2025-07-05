@@ -16,6 +16,7 @@ interface BusinessModalProps {
   onSave: () => void;
   onDelete: (id: string) => void;
   confirmDelete: string | null;
+  onCancelDelete: () => void; // Nuevo prop para cancelar confirmación
   cuts: Record<
     string,
     {
@@ -41,6 +42,7 @@ export default function BusinessModal({
   onSave,
   onDelete,
   confirmDelete,
+  onCancelDelete,
 }: BusinessModalProps) {
   const [availableCuts, setAvailableCuts] = useState<
     {
@@ -78,7 +80,7 @@ export default function BusinessModal({
   };
 
   const cancelDeleteAction = () => {
-    onDelete(""); // Restablece confirmDelete a null
+    onCancelDelete(); // Solo cierra el popup de confirmación
   };
 
   if (!show) return null;
@@ -108,18 +110,50 @@ export default function BusinessModal({
             El nombre es obligatorio
           </p>
         )}
+        {/* Leyenda de cortes seleccionados */}
+        <div className="flex items-center gap-2 mb-2 text-gray-400 text-sm">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            strokeWidth={2}
+            stroke="currentColor"
+            className="w-4 h-4"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
+          </svg>
+          <span>
+            Los cortes con{" "}
+            <span className="text-blue-500 font-semibold">borde azul</span> son
+            los seleccionados para este negocio.
+          </span>
+        </div>
         <div className="space-y-3 max-h-64 overflow-y-auto font-mono text-lg text-[var(--foreground)]">
-          {availableCuts.map((cut) => (
-            <label key={cut.id} className="flex items-center gap-3">
-              <input
-                type="checkbox"
-                checked={selectedCutsModal.includes(cut.id)}
-                onChange={() => toggleCutSelection(cut.id)}
-                className="h-5 w-5 text-[var(--primary)] focus:ring-[var(--primary)] rounded"
-              />
-              <span>{cut.name}</span>
-            </label>
-          ))}
+          {availableCuts.map((cut) => {
+            const isSelected = selectedCutsModal.includes(cut.id);
+            return (
+              <label
+                key={cut.id}
+                className={`flex items-center gap-3 px-2 py-1 rounded-md border transition-all ${
+                  isSelected
+                    ? "border-blue-500 border-2 bg-blue-50 dark:bg-blue-900/10"
+                    : "border-gray-300 dark:border-gray-600"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => toggleCutSelection(cut.id)}
+                  className="h-5 w-5 text-[var(--primary)] focus:ring-[var(--primary)] rounded"
+                />
+                <span>{cut.name}</span>
+              </label>
+            );
+          })}
         </div>
         <div className="mt-8 flex justify-end gap-3">
           <button
