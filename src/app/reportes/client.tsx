@@ -355,11 +355,14 @@ export default function Reportes() {
     indexAxis: "y" as const,
   };
 
-  // KPIs (mismo código que antes)
-  const maxAbsBenefitQuotation =
-    quotations.length > 0
-      ? quotations.reduce((max, q) =>
-          Math.abs(q.difference_usd) > Math.abs(max.difference_usd) ? q : max
+  // KPI: Mayor ganancia
+  const positiveVisualQuotations = quotations.filter(
+    (q) => q.difference_usd < 0
+  );
+  const maxVisualPositiveBenefitQuotation =
+    positiveVisualQuotations.length > 0
+      ? positiveVisualQuotations.reduce((min, q) =>
+          q.difference_usd < min.difference_usd ? q : min
         )
       : null;
   const totalQuotations = quotations.length;
@@ -607,15 +610,17 @@ export default function Reportes() {
       y += 15;
       doc.text(`Total Cotizaciones: ${totalQuotations}`, 18, y);
       y += 7;
-      if (maxAbsBenefitQuotation) {
+      if (maxVisualPositiveBenefitQuotation) {
         doc.text(
           `Mayor Diferencia Absoluta (USD): $${Math.abs(
-            maxAbsBenefitQuotation.difference_usd
+            maxVisualPositiveBenefitQuotation.difference_usd
           ).toLocaleString("es-AR", {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2,
-          })}  |  ${maxAbsBenefitQuotation.business.name} - ${new Date(
-            maxAbsBenefitQuotation.created_at
+          })}  |  ${
+            maxVisualPositiveBenefitQuotation.business.name
+          } - ${new Date(
+            maxVisualPositiveBenefitQuotation.created_at
           ).toLocaleDateString("es-AR")}`,
           18,
           y
@@ -707,7 +712,7 @@ export default function Reportes() {
     return (
       <Layout>
         <div className="min-h-screen flex items-center justify-center bg-[var(--background)]">
-          <p className="text-[var(--foreground)]">Cargando reportes...</p>
+          <p className="text-[var(--foreground]">Cargando reportes...</p>
         </div>
       </Layout>
     );
@@ -828,9 +833,9 @@ export default function Reportes() {
               Mayor Diferencia en Cotización (USD)
             </h3>
             <p className="text-3xl font-bold">
-              {maxAbsBenefitQuotation
-                ? `$${Math.abs(
-                    maxAbsBenefitQuotation.difference_usd
+              {maxVisualPositiveBenefitQuotation
+                ? `+${Math.abs(
+                    maxVisualPositiveBenefitQuotation.difference_usd
                   ).toLocaleString("es-AR", {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
@@ -838,9 +843,11 @@ export default function Reportes() {
                 : "-"}
             </p>
             <p className="text-sm">
-              {maxAbsBenefitQuotation
-                ? `${maxAbsBenefitQuotation.business.name} - ${new Date(
-                    maxAbsBenefitQuotation.created_at
+              {maxVisualPositiveBenefitQuotation
+                ? `${
+                    maxVisualPositiveBenefitQuotation.business.name
+                  } - ${new Date(
+                    maxVisualPositiveBenefitQuotation.created_at
                   ).toLocaleDateString("es-AR")}`
                 : "Sin datos"}
             </p>
