@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import Image from "next/image";
 import CutItem from "./CutItem";
@@ -40,8 +40,8 @@ export default function Quotation({ menuOpen }: QuotationProps) {
   const [selectedCutsModal, setSelectedCutsModal] = useState<string[]>([]);
   const [editBusinessId, setEditBusinessId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-  const [usdPerKg, setUsdPerKg] = useState<number>(0);
-  const [mediaResWeight, setMediaResWeight] = useState<number>(0);
+  const [usdPerKg, setUsdPerKg] = useState<string>("");
+  const [mediaResWeight, setMediaResWeight] = useState<string>("");
   const [showMissingPricesPopup, setShowMissingPricesPopup] = useState(false);
   const [missingPriceCuts, setMissingPriceCuts] = useState<string[]>([]);
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
@@ -169,7 +169,7 @@ export default function Quotation({ menuOpen }: QuotationProps) {
           ...cut,
           prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
           notes: "",
-          currency: "ARS",
+          currency: "USD",
         };
       });
       setCuts(initialCutsState);
@@ -235,14 +235,18 @@ export default function Quotation({ menuOpen }: QuotationProps) {
   }, [cuts, getDisplayCuts]);
 
   useEffect(() => {
-    if (selectedBusiness && usdPerKg > 0 && mediaResWeight > 0) {
+    if (
+      selectedBusiness &&
+      parseFloat(usdPerKg) > 0 &&
+      parseFloat(mediaResWeight) > 0
+    ) {
       validatePrices();
     }
   }, [selectedBusiness, mediaResWeight, usdPerKg, validatePrices]);
 
   const handleReset = () => {
-    setUsdPerKg(0);
-    setMediaResWeight(0);
+    setUsdPerKg("");
+    setMediaResWeight("");
     setSelectedCutImage(null);
     setSelectedCutName(null);
     setSelectedBusiness(null);
@@ -340,7 +344,7 @@ export default function Quotation({ menuOpen }: QuotationProps) {
             : currency === "ARS"
             ? price / dollarRate
             : 0;
-        const kg = (percentage / 100) * mediaResWeight;
+        const kg = (percentage / 100) * parseFloat(mediaResWeight || "0");
         total += usdValue * kg;
       }
     });
@@ -472,6 +476,8 @@ export default function Quotation({ menuOpen }: QuotationProps) {
   };
 
   const deleteBusiness = async (id: string) => {
+    // Evitar acciones si el id es vacío o null
+    if (!id) return;
     if (!confirmDelete) {
       setConfirmDelete(id);
       return;
@@ -556,7 +562,8 @@ export default function Quotation({ menuOpen }: QuotationProps) {
 
     // Si ambas validaciones pasan, guardar la cotización
     try {
-      const totalInitialUSDNum = mediaResWeight * usdPerKg;
+      const totalInitialUSDNum =
+        parseFloat(mediaResWeight || "0") * parseFloat(usdPerKg || "0");
       const rawTotalCutsUSD = calculateTotalUSD();
       const totalCutsUSD = Number(
         rawTotalCutsUSD.replace(/\./g, "").replace(",", ".")
@@ -624,6 +631,9 @@ export default function Quotation({ menuOpen }: QuotationProps) {
     }
   };
 
+  // Refs para inputs de precio
+  const priceInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--background)]">
@@ -634,7 +644,9 @@ export default function Quotation({ menuOpen }: QuotationProps) {
 
   if (!userEmail) return null;
 
-  const totalInitialUSDNum = mediaResWeight * usdPerKg;
+  const mediaResWeightNum = parseFloat(mediaResWeight) || 0;
+  const usdPerKgNum = parseFloat(usdPerKg) || 0;
+  const totalInitialUSDNum = mediaResWeightNum * usdPerKgNum;
   const totalInitialUSD = totalInitialUSDNum.toLocaleString("es-AR", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -648,6 +660,22 @@ export default function Quotation({ menuOpen }: QuotationProps) {
     totalInitialUSDNum === 0
       ? 0
       : Number(((differenceUSD / totalInitialUSDNum) * 100).toFixed(2));
+
+  // Función para manejar el tab custom en inputs de precio
+  const handlePriceKeyDown = (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    cut: string
+  ) => {
+    if (e.key === "Tab" && !e.shiftKey) {
+      e.preventDefault();
+      const displayCuts = getDisplayCuts();
+      const idx = displayCuts.indexOf(cut);
+      if (idx !== -1 && idx < displayCuts.length - 1) {
+        const nextCut = displayCuts[idx + 1];
+        priceInputRefs.current[nextCut]?.focus();
+      }
+    }
+  };
 
   return (
     <div className="flex flex-1 flex-col p-6 overflow-hidden">
@@ -665,10 +693,7 @@ export default function Quotation({ menuOpen }: QuotationProps) {
               min="0"
               step="0.1"
               value={mediaResWeight}
-              onFocus={(e) => {
-                if (e.target.value === "0") e.target.value = "";
-              }}
-              onChange={(e) => setMediaResWeight(Number(e.target.value))}
+              onChange={(e) => setMediaResWeight(e.target.value)}
               className="px-2 py-1 bg-[var(--background)] border border-gray-300 dark:border-gray-600 rounded-md text-[var(--foreground)] focus:ring-2 focus:ring-[var(--primary)] w-24"
               required
             />
@@ -680,15 +705,12 @@ export default function Quotation({ menuOpen }: QuotationProps) {
               min="0"
               step="0.01"
               value={usdPerKg}
-              onFocus={(e) => {
-                if (e.target.value === "0") e.target.value = "";
-              }}
-              onChange={(e) => setUsdPerKg(Number(e.target.value))}
+              onChange={(e) => setUsdPerKg(e.target.value)}
               className="px-2 py-1 bg-[var(--background)] border border-gray-300 dark:border-gray-600 rounded-md text-[var(--foreground)] focus:ring-2 focus:ring-[var(--primary)] w-24"
               required
             />
           </div>
-          {usdPerKg > 0 && mediaResWeight > 0 && (
+          {usdPerKgNum > 0 && mediaResWeightNum > 0 && (
             <>
               <select
                 value={selectedBusiness || ""}
@@ -747,7 +769,7 @@ export default function Quotation({ menuOpen }: QuotationProps) {
             </>
           )}
         </div>
-        {usdPerKg > 0 && mediaResWeight > 0 && (
+        {usdPerKgNum > 0 && mediaResWeightNum > 0 && (
           <div className="flex justify-end gap-4 mt-4">
             <button
               onClick={() => setShowConfirmReset(true)}
@@ -806,6 +828,7 @@ export default function Quotation({ menuOpen }: QuotationProps) {
         onSave={saveBusiness}
         onDelete={deleteBusiness}
         confirmDelete={confirmDelete}
+        onCancelDelete={() => setConfirmDelete(null)}
         cuts={Object.fromEntries(
           Object.entries(cuts).map(([name, cut]) => [
             name,
@@ -850,12 +873,25 @@ export default function Quotation({ menuOpen }: QuotationProps) {
       {showSuccessPopup && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-30">
           <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md shadow-lg text-center">
-            <svg className="w-14 h-14 mx-auto mb-4 text-emerald-400 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+            <svg
+              className="w-14 h-14 mx-auto mb-4 text-emerald-400 animate-bounce"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M5 13l4 4L19 7"
+              />
             </svg>
-            <h3 className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mb-2">¡Éxito!</h3>
+            <h3 className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mb-2">
+              ¡Éxito!
+            </h3>
             <p className="text-lg text-[var(--foreground)] mb-6">
-              Cotización guardada exitosamente. Podrás verla en historial de cotizaciones.
+              Cotización guardada exitosamente. Podrás verla en historial de
+              cotizaciones.
             </p>
             <div className="flex justify-center">
               <button
@@ -893,10 +929,22 @@ export default function Quotation({ menuOpen }: QuotationProps) {
       {showBusinessSuccessPopup && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-30">
           <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md shadow-lg text-center">
-            <svg className="w-14 h-14 mx-auto mb-4 text-emerald-400 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+            <svg
+              className="w-14 h-14 mx-auto mb-4 text-emerald-400 animate-bounce"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M5 13l4 4L19 7"
+              />
             </svg>
-            <h3 className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mb-2">¡Éxito!</h3>
+            <h3 className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mb-2">
+              ¡Éxito!
+            </h3>
             {(() => {
               let successMessage = "Negocio creado exitosamente.";
               if (lastAction === "updated") {
@@ -949,10 +997,22 @@ export default function Quotation({ menuOpen }: QuotationProps) {
       {showNoBusinessPopup && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-30">
           <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md shadow-lg text-center">
-            <svg className="w-14 h-14 mx-auto mb-4 text-yellow-400 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            <svg
+              className="w-14 h-14 mx-auto mb-4 text-yellow-400 animate-bounce"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
             </svg>
-            <h3 className="text-2xl font-bold text-yellow-600 dark:text-yellow-400 mb-2">Negocio Faltante</h3>
+            <h3 className="text-2xl font-bold text-yellow-600 dark:text-yellow-400 mb-2">
+              Negocio Faltante
+            </h3>
             <p className="text-lg text-[var(--foreground)] mb-6">
               Por favor, selecciona un negocio antes de guardar la cotización.
             </p>
@@ -993,11 +1053,25 @@ export default function Quotation({ menuOpen }: QuotationProps) {
       {showConfirmReset && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40">
           <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md shadow-lg text-center">
-            <svg className="w-12 h-12 mx-auto mb-4 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            <svg
+              className="w-12 h-12 mx-auto mb-4 text-yellow-400"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
             </svg>
-            <h3 className="text-xl font-semibold text-[var(--foreground)] mb-2">¿Limpiar todo?</h3>
-            <p className="text-gray-600 dark:text-gray-300 mb-6">Se borrarán todos los datos ingresados. ¿Estás seguro?</p>
+            <h3 className="text-xl font-semibold text-[var(--foreground)] mb-2">
+              ¿Limpiar todo?
+            </h3>
+            <p className="text-gray-600 dark:text-gray-300 mb-6">
+              Se borrarán todos los datos ingresados. ¿Estás seguro?
+            </p>
             <div className="flex justify-center gap-4">
               <button
                 onClick={() => setShowConfirmReset(false)}
@@ -1006,7 +1080,10 @@ export default function Quotation({ menuOpen }: QuotationProps) {
                 Cancelar
               </button>
               <button
-                onClick={() => { setShowConfirmReset(false); handleReset(); }}
+                onClick={() => {
+                  setShowConfirmReset(false);
+                  handleReset();
+                }}
                 className="px-5 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-all cursor-pointer text-lg font-medium"
               >
                 Sí, limpiar
@@ -1019,7 +1096,7 @@ export default function Quotation({ menuOpen }: QuotationProps) {
       <div className="flex flex-1 overflow-hidden">
         <aside className="w-[28rem] sm:w-[30rem] lg:w-[29rem] bg-[var(--background)] border-r border-gray-200 dark:border-gray-700 p-4 overflow-y-auto shrink-0">
           <div className="space-y-4">
-            {usdPerKg > 0 && mediaResWeight > 0 && (
+            {usdPerKgNum > 0 && mediaResWeightNum > 0 && (
               <div className="text-sm text-gray-600 dark:text-gray-400">
                 <p className="text-base md:text-lg">
                   Dólar (oficial): $
@@ -1031,6 +1108,28 @@ export default function Quotation({ menuOpen }: QuotationProps) {
                 <p className="text-base md:text-lg">
                   Última actualización: <span>{lastUpdate}</span>
                 </p>
+                {/* Mensaje explicativo del borde azul */}
+                <div className="mt-5 flex items-center gap-2 text-sm text-gray-400">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2}
+                    stroke="currentColor"
+                    className="w-4 h-4 text-gray-600"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
+                  <span className="font-medium">
+                    Los cortes con{" "}
+                    <span className="text-blue-500 font-bold">borde azul</span>{" "}
+                    son los seleccionados por el negocio.
+                  </span>
+                </div>
               </div>
             )}
             {selectedBusiness ? (
@@ -1044,7 +1143,12 @@ export default function Quotation({ menuOpen }: QuotationProps) {
                     (c) => cuts[c].prices[cuts[c].currency] > 0
                   );
                   const isDisabled = isMacro && hasSubCutPrices;
-                  const hasMissingPrice = missingPriceCuts.includes(cut);
+                  // Nuevo: determinar si el corte está seleccionado por el negocio
+                  const selectedBusinessObj = businesses.find(
+                    (b) => b.id === selectedBusiness
+                  );
+                  const isSelectedByBusiness =
+                    selectedBusinessObj?.cuts.includes(cuts[cut].id);
 
                   return (
                     <CutItem
@@ -1058,12 +1162,18 @@ export default function Quotation({ menuOpen }: QuotationProps) {
                         imageMap[cut] ? () => handleCutSelect(cut) : undefined
                       }
                       isDisabled={isDisabled}
-                      className={hasMissingPrice ? "border-red-500" : ""}
+                      selectedByBusiness={!!isSelectedByBusiness}
+                      priceInputRef={(el: HTMLInputElement | null) => {
+                        priceInputRefs.current[cut] = el;
+                      }}
+                      onPriceKeyDown={(
+                        e: React.KeyboardEvent<HTMLInputElement>
+                      ) => handlePriceKeyDown(e, cut)}
                     />
                   );
                 })}
               </div>
-            ) : usdPerKg > 0 && mediaResWeight > 0 ? (
+            ) : usdPerKgNum > 0 && mediaResWeightNum > 0 ? (
               <p className="text-[var(--foreground)] text-center">
                 Por favor, selecciona o agrega un negocio para comenzar.
               </p>
@@ -1082,7 +1192,7 @@ export default function Quotation({ menuOpen }: QuotationProps) {
           }`}
         >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {usdPerKg > 0 && mediaResWeight > 0 && (
+            {usdPerKgNum > 0 && mediaResWeightNum > 0 && (
               <div className="bg-[var(--background)] border-2 border-gray-300 dark:border-gray-600 rounded-xl shadow-lg p-6 col-span-2">
                 <h2 className="text-2xl font-bold text-[var(--foreground)] mb-4">
                   Información Inicial
@@ -1094,7 +1204,7 @@ export default function Quotation({ menuOpen }: QuotationProps) {
                   </p>
                   <p>
                     <span className="font-semibold">Valor por kg:</span> $
-                    {usdPerKg.toLocaleString("es-AR", {
+                    {(parseFloat(usdPerKg) || 0).toLocaleString("es-AR", {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
                     })}{" "}
@@ -1162,7 +1272,7 @@ export default function Quotation({ menuOpen }: QuotationProps) {
                 </div>
               )}
             </div>
-            {usdPerKg > 0 && mediaResWeight > 0 && (
+            {usdPerKgNum > 0 && mediaResWeightNum > 0 && (
               <div className="bg-[var(--background)] border-2 border-gray-300 dark:border-gray-600 rounded-xl shadow-lg p-6 col-span-2">
                 <h2 className="text-2xl font-bold text-[var(--foreground)] mb-4">
                   Cuadro Comparativo
@@ -1192,7 +1302,9 @@ export default function Quotation({ menuOpen }: QuotationProps) {
                             : currency === "ARS" && dollarRate
                             ? prices.ARS / dollarRate
                             : 0;
-                        const kg = (percentage / 100) * mediaResWeight;
+                        const kg =
+                          (percentage / 100) *
+                          parseFloat(mediaResWeight || "0");
                         const usdFinal =
                           prices[currency] > 0 ? usdValue * kg : 0;
 
@@ -1253,10 +1365,13 @@ export default function Quotation({ menuOpen }: QuotationProps) {
                         <td className="p-2">Total</td>
                         <td className="p-2">{calculateTotalPercentage()}%</td>
                         <td className="p-2">
-                          {mediaResWeight.toLocaleString("es-AR", {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })}
+                          {(parseFloat(mediaResWeight) || 0).toLocaleString(
+                            "es-AR",
+                            {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            }
+                          )}
                         </td>
                         <td className="p-2">-</td>
                         <td className="p-2">-</td>
@@ -1293,6 +1408,49 @@ export default function Quotation({ menuOpen }: QuotationProps) {
                       USD ({differenceUSD > 0 ? "-" : "+"}
                       {Math.abs(differencePercentage)}%)
                     </p>
+                  </div>
+                </div>
+                {/* Botón Guardar Cotización centrado debajo del cuadro comparativo */}
+                <div className="flex flex-col items-center mt-8">
+                  <button
+                    onClick={handleSaveQuotation}
+                    className="px-6 py-3 bg-green-400 text-white rounded-md hover:bg-green-500 transition-all flex items-center gap-2 cursor-pointer text-lg font-semibold shadow-md"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth={2}
+                      stroke="currentColor"
+                      className="w-6 h-6"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M5 13l4 4L19 7"
+                      />
+                    </svg>
+                    Guardar Cotización
+                  </button>
+                  <div className="flex items-center gap-2 mt-2 text-gray-400 text-sm">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth={2}
+                      stroke="currentColor"
+                      className="w-4 h-4"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                    <span>
+                      Luego podrás descargar la cotización desde el historial de
+                      cotizaciones.
+                    </span>
                   </div>
                 </div>
               </div>
