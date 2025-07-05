@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import Layout from "@/app/components/Layout";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 interface Quotation {
   id: string;
@@ -17,6 +19,20 @@ interface Quotation {
   difference_usd: number;
   difference_percentage: number;
 }
+
+interface QuotationCutPDF {
+  name: string;
+  percentage: number;
+  macro: string | null;
+  isFixedCost: boolean;
+  priceARS: number;
+  priceARSIVA: number;
+  priceUSD: number;
+  currency: string;
+  notes: string;
+}
+
+type AutoTableResult = { finalY: number };
 
 export default function HistorialClient() {
   const [quotations, setQuotations] = useState<Quotation[]>([]);
@@ -162,6 +178,179 @@ export default function HistorialClient() {
 
   const handleEdit = (id: string) => {
     router.push(`/editar-cotizacion/${id}`);
+  };
+
+  // Descargar PDF de cotización
+  const handleDownload = async (quotation: Quotation) => {
+    // Obtener los cortes de la cotización
+    const { data: cutsData } = await supabase
+      .from("quotation_cuts")
+      .select(
+        `cut_id, price_ars, price_ars_iva, price_usd, currency, notes, cuts:cut_id(name, percentage, macro, is_fixed_cost)`
+      )
+      .eq("quotation_id", quotation.id);
+    if (!cutsData) return;
+    // Normalizar cortes con tipo explícito y manejo seguro de cuts
+    const cuts: QuotationCutPDF[] = cutsData.map((c) => {
+      const cutObjRaw = c.cuts;
+      let cutObj: Record<string, unknown> | undefined = undefined;
+      if (Array.isArray(cutObjRaw)) {
+        cutObj = cutObjRaw.length > 0 ? cutObjRaw[0] : undefined;
+      } else if (typeof cutObjRaw === "object" && cutObjRaw !== null) {
+        cutObj = cutObjRaw;
+      }
+      return {
+        name: cutObj && typeof cutObj.name === "string" ? cutObj.name : "-",
+        percentage:
+          cutObj && typeof cutObj.percentage === "number"
+            ? cutObj.percentage
+            : 0,
+        macro:
+          cutObj && (typeof cutObj.macro === "string" || cutObj.macro === null)
+            ? (cutObj.macro as string | null)
+            : null,
+        isFixedCost:
+          cutObj && typeof cutObj.is_fixed_cost === "boolean"
+            ? cutObj.is_fixed_cost
+            : false,
+        priceARS: c.price_ars,
+        priceARSIVA: c.price_ars_iva,
+        priceUSD: c.price_usd,
+        currency: c.currency,
+        notes: c.notes || "-",
+      };
+    });
+    // Crear PDF
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    let y = 20;
+    // Logo
+    const logoPath = "/images/vaca.png";
+    const img = new window.Image();
+    img.src = logoPath;
+    await new Promise((resolve) => {
+      img.onload = resolve;
+    });
+    // Definir variables para el logo y la cabecera
+    const logoWidth = 18;
+    const logoHeight = 18;
+    const logoX = 14;
+    const logoY = 10;
+    doc.addImage(img, "PNG", logoX, logoY, logoWidth, logoHeight);
+    // Título centrado
+    doc.setFontSize(24);
+    doc.text("BeefValue", pageWidth / 2, 22, { align: "center" });
+    // Fecha a la derecha
+    doc.setFontSize(12);
+    doc.text(
+      `Fecha: ${new Date(quotation.created_at).toLocaleDateString("es-AR")}`,
+      pageWidth - 14,
+      22,
+      { align: "right" }
+    );
+    y = 32;
+    // Datos de la cotización
+    doc.setFontSize(12);
+    doc.text(`Negocio: ${quotation.business.name}`, 14, y);
+    y += 8;
+    doc.text(`Peso Prom. Media Res (Kg): ${quotation.media_res_weight}`, 14, y);
+    y += 6;
+    doc.text(`USD/Kg: $${quotation.usd_per_kg}`, 14, y);
+    y += 6;
+    doc.text(`Dólar: $${quotation.dollar_rate}`, 14, y);
+    y += 10;
+    // Cuadro comparativo
+    doc.setFontSize(16);
+    doc.text("Cuadro Comparativo", pageWidth / 2, y, { align: "center" });
+    y += 6;
+    const tableResult = autoTable(doc, {
+      startY: y,
+      head: [
+        [
+          "Corte",
+          "%",
+          "Precio ARS",
+          "Precio ARS+IVA",
+          "Precio USD",
+          "Moneda",
+          "Notas",
+        ],
+      ],
+      body: cuts.map((c) => [
+        c.name,
+        c.percentage.toFixed(2),
+        c.priceARS > 0
+          ? c.priceARS.toLocaleString("es-AR", {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })
+          : "-",
+        c.priceARSIVA > 0
+          ? c.priceARSIVA.toLocaleString("es-AR", {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })
+          : "-",
+        c.priceUSD > 0
+          ? c.priceUSD.toLocaleString("es-AR", {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })
+          : "-",
+        c.currency,
+        c.notes,
+      ]),
+      styles: { fontSize: 10 },
+      headStyles: { fillColor: [22, 163, 74] },
+      margin: { left: 10, right: 10 },
+      theme: "grid",
+    }) as unknown as AutoTableResult | undefined;
+    y =
+      tableResult && typeof tableResult.finalY === "number"
+        ? tableResult.finalY + 10
+        : y + 10;
+    // Comparación final
+    doc.setFontSize(16);
+    doc.text("Comparación Final", pageWidth / 2, y, { align: "center" });
+    y += 8;
+    doc.setFontSize(12);
+    doc.text(
+      `Total Inicial: $${quotation.total_initial_usd.toLocaleString("es-AR", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })} USD`,
+      14,
+      y
+    );
+    y += 6;
+    doc.text(
+      `Total Cortes: $${quotation.total_cuts_usd.toLocaleString("es-AR", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })} USD`,
+      14,
+      y
+    );
+    y += 6;
+    doc.text(
+      `Diferencia: ${quotation.difference_usd > 0 ? "-" : "+"}$${Math.abs(
+        quotation.difference_usd
+      ).toLocaleString("es-AR", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })} USD (${quotation.difference_usd > 0 ? "-" : "+"}${Math.abs(
+        quotation.difference_percentage
+      )}%)`,
+      14,
+      y
+    );
+    // Descargar
+    doc.save(
+      `beefvalue_cotizacion_${quotation.business.name.replace(
+        /\s+/g,
+        "_"
+      )}_${new Date(quotation.created_at).toLocaleDateString("es-AR")}.pdf`
+    );
   };
 
   // Filtrar cotizaciones por nombre de negocio
@@ -344,6 +533,26 @@ export default function HistorialClient() {
                         />
                       </svg>
                       Eliminar
+                    </button>
+                    <button
+                      onClick={() => handleDownload(quotation)}
+                      className="px-3 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-all flex items-center gap-1 cursor-pointer"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        strokeWidth={2}
+                        stroke="currentColor"
+                        className="w-5 h-5"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4"
+                        />
+                      </svg>
+                      Descargar
                     </button>
                   </td>
                 </tr>
