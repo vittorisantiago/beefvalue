@@ -59,6 +59,9 @@ export default function Reportes() {
   const [error, setError] = useState<string | null>(null);
   const [permissions, setPermissions] = useState<string[]>([]);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
+  const [expandedChart, setExpandedChart] = useState<
+    null | "monthly" | "business" | "businessGain"
+  >(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -205,6 +208,30 @@ export default function Reportes() {
       .sort((a, b) => b.totalGain - a.totalGain);
   };
 
+  // Gráfico de Top 5 Negocios por Ganancia
+  const negativeQuotations = quotations.filter((q) => q.difference_usd < 0);
+  const processBusinessDataNegative = (): BusinessData[] => {
+    const businessMap: Record<string, { totalGain: number; count: number }> =
+      {};
+    negativeQuotations.forEach((q) => {
+      const businessName = q.business?.name || "Sin Negocio";
+      if (!businessMap[businessName]) {
+        businessMap[businessName] = { totalGain: 0, count: 0 };
+      }
+      businessMap[businessName].totalGain += Math.abs(q.difference_usd);
+      businessMap[businessName].count += 1;
+    });
+    return Object.entries(businessMap)
+      .map(([name, data]) => ({
+        name,
+        totalGain: data.totalGain,
+        count: data.count,
+      }))
+      .sort((a, b) => b.totalGain - a.totalGain)
+      .slice(0, 5);
+  };
+  const businessDataNegative = processBusinessDataNegative();
+
   const monthlyData = processMonthlyData();
   const businessData = processBusinessData();
 
@@ -259,13 +286,13 @@ export default function Reportes() {
   };
 
   const businessGainChartData = {
-    labels: businessData.map((d) => d.name),
+    labels: businessDataNegative.map((d) => d.name),
     datasets: [
       {
         label: "Ganancia Total por Negocio (USD)",
-        data: businessData.map((d) => d.totalGain),
-        backgroundColor: softColors.slice(0, businessData.length),
-        borderColor: softColors.slice(0, businessData.length),
+        data: businessDataNegative.map((d) => d.totalGain),
+        backgroundColor: softColors.slice(0, businessDataNegative.length),
+        borderColor: softColors.slice(0, businessDataNegative.length),
         borderWidth: 1,
       },
     ],
@@ -738,6 +765,12 @@ export default function Reportes() {
     );
   }
 
+  // Animación para el modal de gráfico expandido
+  const chartModalClass =
+    "fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60 backdrop-blur-sm transition-all duration-300";
+  const chartContentClass =
+    "bg-white dark:bg-gray-900 rounded-2xl shadow-2xl p-8 relative w-full max-w-5xl h-[80vh] flex flex-col animate-fade-in";
+
   return (
     <Layout>
       <div className="flex flex-1 flex-col p-6 overflow-hidden">
@@ -873,16 +906,33 @@ export default function Reportes() {
         {/* Gráficos */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Cotizaciones por Mes */}
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg relative">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg relative group">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-semibold text-[var(--foreground)]">
                 Cotizaciones por Mes
               </h2>
+              <button
+                onClick={() => setExpandedChart("monthly")}
+                className="ml-2 p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+                title="Expandir gráfico"
+              >
+                <svg
+                  className="w-6 h-6 text-gray-500"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M4 8V6a2 2 0 012-2h2m8 0h2a2 2 0 012 2v2m0 8v2a2 2 0 01-2 2h-2m-8 0H6a2 2 0 01-2-2v-2"
+                  />
+                </svg>
+              </button>
             </div>
             <div
-              className={["transition-all", "duration-300", "h-[400px]"].join(
-                " "
-              )}
+              className={"transition-all duration-300 h-[400px]"}
               data-chart="monthly"
             >
               <Bar data={monthlyChartData} options={monthlyChartOptions} />
@@ -890,16 +940,33 @@ export default function Reportes() {
           </div>
 
           {/* Distribución por Negocio */}
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg relative">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg relative group">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-semibold text-[var(--foreground)]">
                 Distribución de Cotizaciones por Negocio
               </h2>
+              <button
+                onClick={() => setExpandedChart("business")}
+                className="ml-2 p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+                title="Expandir gráfico"
+              >
+                <svg
+                  className="w-6 h-6 text-gray-500"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M4 8V6a2 2 0 012-2h2m8 0h2a2 2 0 012 2v2m0 8v2a2 2 0 01-2 2h-2m-8 0H6a2 2 0 01-2-2v-2"
+                  />
+                </svg>
+              </button>
             </div>
             <div
-              className={["transition-all", "duration-300", "h-[400px]"].join(
-                " "
-              )}
+              className={"transition-all duration-300 h-[400px]"}
               data-chart="business"
             >
               <Pie
@@ -910,16 +977,33 @@ export default function Reportes() {
           </div>
 
           {/* Top 5 Negocios por Ganancia */}
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg relative">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg relative group">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-semibold text-[var(--foreground)]">
                 Top 5 Negocios por Ganancia (USD)
               </h2>
+              <button
+                onClick={() => setExpandedChart("businessGain")}
+                className="ml-2 p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+                title="Expandir gráfico"
+              >
+                <svg
+                  className="w-6 h-6 text-gray-500"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M4 8V6a2 2 0 012-2h2m8 0h2a2 2 0 012 2v2m0 8v2a2 2 0 01-2 2h-2m-8 0H6a2 2 0 01-2-2v-2"
+                  />
+                </svg>
+              </button>
             </div>
             <div
-              className={["transition-all", "duration-300", "h-[400px]"].join(
-                " "
-              )}
+              className={"transition-all duration-300 h-[400px]"}
               data-chart="businessGain"
             >
               <Bar
@@ -929,6 +1013,88 @@ export default function Reportes() {
             </div>
           </div>
         </div>
+
+        {/* Modal de gráfico expandido */}
+        {expandedChart && (
+          <div className={chartModalClass}>
+            <div
+              className={chartContentClass + " animate-fade-in-scale"}
+              style={{ animation: "fadeInScale 0.3s" }}
+            >
+              <button
+                onClick={() => setExpandedChart(null)}
+                className="absolute top-4 right-4 text-gray-400 hover:text-red-500 text-3xl font-bold transition-colors z-10 cursor-pointer"
+                aria-label="Cerrar"
+                style={{ transition: "color 0.2s" }}
+              >
+                ×
+              </button>
+              <div className="flex-1 flex items-center justify-center">
+                {expandedChart === "monthly" && (
+                  <Bar
+                    data={monthlyChartData}
+                    options={{
+                      ...monthlyChartOptions,
+                      maintainAspectRatio: false,
+                    }}
+                    height={undefined}
+                    width={undefined}
+                  />
+                )}
+                {expandedChart === "business" && (
+                  <Pie
+                    data={businessCountChartData}
+                    options={{
+                      ...businessCountChartOptions,
+                      maintainAspectRatio: false,
+                    }}
+                    height={undefined}
+                    width={undefined}
+                  />
+                )}
+                {expandedChart === "businessGain" && (
+                  <Bar
+                    data={businessGainChartData}
+                    options={{
+                      ...businessGainChartOptions,
+                      maintainAspectRatio: false,
+                    }}
+                    height={undefined}
+                    width={undefined}
+                  />
+                )}
+              </div>
+            </div>
+            <style jsx>{`
+              @keyframes fadeInScale {
+                0% {
+                  opacity: 0;
+                  transform: scale(0.85);
+                }
+                100% {
+                  opacity: 1;
+                  transform: scale(1);
+                }
+              }
+              .animate-fade-in-scale {
+                animation: fadeInScale 0.3s;
+              }
+              .animate-fade-out-scale {
+                animation: fadeOutScale 0.25s;
+              }
+              @keyframes fadeOutScale {
+                0% {
+                  opacity: 1;
+                  transform: scale(1);
+                }
+                100% {
+                  opacity: 0;
+                  transform: scale(0.85);
+                }
+              }
+            `}</style>
+          </div>
+        )}
       </div>
     </Layout>
   );
