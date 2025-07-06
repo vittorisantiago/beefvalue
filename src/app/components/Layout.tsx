@@ -22,6 +22,7 @@ export default function Layout({ children }: LayoutProps) {
     y: 0,
   });
   const [permissions, setPermissions] = useState<string[]>([]);
+  const [userEmail, setUserEmail] = useState<string>("");
 
   useEffect(() => {
     const savedState = localStorage.getItem("menuOpen");
@@ -44,6 +45,8 @@ export default function Layout({ children }: LayoutProps) {
         return;
       }
       const userId = session.user.id;
+      const email = session.user.email || "";
+      setUserEmail(email);
       console.log("Checking user:", userId);
 
       const { data: groupData, error: groupError } = await supabase
@@ -89,6 +92,11 @@ export default function Layout({ children }: LayoutProps) {
     await supabase.auth.signOut();
     router.push("/landing");
     setShowConfirmLogout(false);
+  };
+
+  const getDisplayName = (email: string) => {
+    if (!email) return "";
+    return email.split("@")[0];
   };
 
   const menuItems = [
@@ -282,6 +290,50 @@ export default function Layout({ children }: LayoutProps) {
               </Link>
             ))}
 
+            {/* Usuario actual */}
+            <div
+              className={`flex items-center p-3 rounded-md transition-colors duration-300 ${
+                isMenuOpen ? "justify-start" : "justify-center"
+              } text-gray-300 mt-auto mb-2`}
+              style={{ position: "relative" }}
+              onMouseEnter={(e) => {
+                if (!isMenuOpen) {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  setTooltip({
+                    visible: true,
+                    text: userEmail,
+                    x: rect.right + window.scrollX,
+                    y: rect.top + window.scrollY + rect.height / 2,
+                  });
+                }
+              }}
+              onMouseLeave={() => {
+                if (!isMenuOpen) setTooltip({ ...tooltip, visible: false });
+              }}
+            >
+              <svg
+                className="w-5 h-5 mr-3"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                strokeWidth="2"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z"
+                />
+              </svg>
+              <span
+                className={`text-lg ${
+                  isMenuOpen ? "block" : "hidden"
+                } whitespace-nowrap overflow-hidden`}
+                title={userEmail}
+              >
+                {getDisplayName(userEmail)}
+              </span>
+            </div>
+
             <button
               onClick={() => setShowConfirmLogout(true)}
               onMouseEnter={(e) => {
@@ -298,7 +350,7 @@ export default function Layout({ children }: LayoutProps) {
               onMouseLeave={() => {
                 if (!isMenuOpen) setTooltip({ ...tooltip, visible: false });
               }}
-              className={`mt-auto flex items-center p-3 rounded-md transition-colors duration-300 cursor-pointer ${
+              className={`flex items-center p-3 rounded-md transition-colors duration-300 cursor-pointer ${
                 isMenuOpen ? "justify-start" : "justify-center"
               } ${
                 isMenuOpen
