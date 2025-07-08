@@ -17,6 +17,7 @@ import {
 import { Bar, Pie } from "react-chartjs-2";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
+import CompararCotizacionesSection from "@/app/components/CompararCotizacionesSection";
 
 // Registrar los componentes de Chart.js
 ChartJS.register(
@@ -1095,6 +1096,9 @@ export default function Reportes() {
             `}</style>
           </div>
         )}
+
+        {/* Sección Comparar Cotizaciones */}
+        <CompararCotizacionesSection quotations={quotations} />
       </div>
     </Layout>
   );
