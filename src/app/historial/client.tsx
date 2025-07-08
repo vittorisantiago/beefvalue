@@ -32,8 +32,6 @@ interface QuotationCutPDF {
   notes: string;
 }
 
-type AutoTableResult = { finalY: number };
-
 export default function HistorialClient() {
   const [quotations, setQuotations] = useState<Quotation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -259,57 +257,7 @@ export default function HistorialClient() {
     y += 6;
     doc.text(`Dólar: $${quotation.dollar_rate}`, 14, y);
     y += 10;
-    // Cuadro comparativo
-    doc.setFontSize(16);
-    doc.text("Cuadro Comparativo", pageWidth / 2, y, { align: "center" });
-    y += 6;
-    const tableResult = autoTable(doc, {
-      startY: y,
-      head: [
-        [
-          "Corte",
-          "%",
-          "Precio ARS",
-          "Precio ARS+IVA",
-          "Precio USD",
-          "Moneda",
-          "Notas",
-        ],
-      ],
-      body: cuts.map((c) => [
-        c.name,
-        c.percentage.toFixed(2),
-        c.priceARS > 0
-          ? c.priceARS.toLocaleString("es-AR", {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })
-          : "-",
-        c.priceARSIVA > 0
-          ? c.priceARSIVA.toLocaleString("es-AR", {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })
-          : "-",
-        c.priceUSD > 0
-          ? c.priceUSD.toLocaleString("es-AR", {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })
-          : "-",
-        c.currency,
-        c.notes,
-      ]),
-      styles: { fontSize: 10 },
-      headStyles: { fillColor: [22, 163, 74] },
-      margin: { left: 10, right: 10 },
-      theme: "grid",
-    }) as unknown as AutoTableResult | undefined;
-    y =
-      tableResult && typeof tableResult.finalY === "number"
-        ? tableResult.finalY + 10
-        : y + 10;
-    // Comparación final
+    // Comparación final primero
     doc.setFontSize(16);
     doc.text("Comparación Final", pageWidth / 2, y, { align: "center" });
     y += 8;
@@ -344,6 +292,78 @@ export default function HistorialClient() {
       14,
       y
     );
+    y += 10;
+    // Cuadro comparativo debajo
+    doc.setFontSize(16);
+    doc.text("Cuadro Comparativo", pageWidth / 2, y, { align: "center" });
+    y += 6;
+    autoTable(doc, {
+      startY: y,
+      head: [
+        [
+          "Corte",
+          "%",
+          "Kg",
+          "Precio ARS",
+          "Precio ARS+IVA",
+          "Precio USD",
+          "USD Final",
+          "Notas",
+        ],
+      ],
+      body: cuts.map((c) => {
+        // Calcular kg y USD Final igual que en la UI
+        const kg = (c.percentage / 100) * (quotation.media_res_weight || 0);
+        let usdValue = 0;
+        if (c.currency === "USD") {
+          usdValue = c.priceUSD;
+        } else if (c.currency === "ARS + IVA" && quotation.dollar_rate) {
+          usdValue = c.priceARSIVA / 1.105 / quotation.dollar_rate;
+        } else if (c.currency === "ARS" && quotation.dollar_rate) {
+          usdValue = c.priceARS / quotation.dollar_rate;
+        }
+        const usdFinal = c[currencyToField(c.currency)] > 0 ? usdValue * kg : 0;
+        return [
+          c.name,
+          c.percentage.toFixed(2) + "%",
+          kg > 0
+            ? kg.toLocaleString("es-AR", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })
+            : "-",
+          c.priceARS > 0
+            ? c.priceARS.toLocaleString("es-AR", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })
+            : "-",
+          c.priceARSIVA > 0
+            ? c.priceARSIVA.toLocaleString("es-AR", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })
+            : "-",
+          c.priceUSD > 0
+            ? c.priceUSD.toLocaleString("es-AR", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })
+            : "-",
+          usdFinal > 0
+            ? usdFinal.toLocaleString("es-AR", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })
+            : "-",
+          c.notes,
+        ];
+      }),
+      styles: { fontSize: 10 },
+      headStyles: { fillColor: [22, 163, 74] },
+      margin: { left: 10, right: 10 },
+      theme: "grid",
+    });
     // Descargar
     doc.save(
       `beefvalue_cotizacion_${quotation.business.name.replace(
@@ -605,4 +625,12 @@ export default function HistorialClient() {
       </div>
     </Layout>
   );
+}
+
+// Helper para obtener el campo correcto según la moneda
+function currencyToField(currency: string) {
+  if (currency === "USD") return "priceUSD";
+  if (currency === "ARS + IVA") return "priceARSIVA";
+  if (currency === "ARS") return "priceARS";
+  return "priceUSD";
 }
