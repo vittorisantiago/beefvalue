@@ -89,6 +89,15 @@ export default function Layout({ children }: LayoutProps) {
   }, [router]);
 
   const handleSignOut = async () => {
+    // Limpiar el hint de Tab para el usuario actual
+    try {
+      const session = await supabase.auth.getSession();
+      const userId = session?.data?.session?.user?.id;
+      if (typeof window !== "undefined" && userId) {
+        const key = `tabHintDismissed_${userId}`;
+        window.localStorage.removeItem(key);
+      }
+    } catch {}
     await supabase.auth.signOut();
     router.push("/landing");
     setShowConfirmLogout(false);
