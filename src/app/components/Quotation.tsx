@@ -61,7 +61,27 @@ export default function Quotation({ menuOpen }: QuotationProps) {
   >(null);
   const [showConfirmReset, setShowConfirmReset] = useState(false);
 
+  // Mostrar pop-up de ayuda para Tab (una vez por usuario, se resetea al cerrar sesión)
+  const [showTabHint, setShowTabHint] = useState(true);
+  useEffect(() => {
+    if (typeof window !== "undefined" && userId) {
+      const key = `tabHintDismissed_${userId}`;
+      setShowTabHint(!window.localStorage.getItem(key));
+    }
+  }, [userId]);
+
+  const handleDismissTabHint = () => {
+    setShowTabHint(false);
+    if (typeof window !== "undefined" && userId) {
+      const key = `tabHintDismissed_${userId}`;
+      window.localStorage.setItem(key, "1");
+    }
+  };
+
   const imageMap: Record<string, string> = {
+    "Tapa de bife ancho": "/images/tapa_de_bife_ancho.png",
+    "Bife angosto sin cordón": "/images/bife_angosto_sin_cordon.png",
+    "Lomo sin cordón": "/images/lomo_sin_cordon.png",
     "Colita de cuadril": "/images/colita_de_cuadril.png",
     "Nalga sin tapa": "/images/nalga_de_adentro_sin_tapa.png",
     "Tapa de nalga": "/images/tapa_de_nalga.png",
@@ -75,7 +95,7 @@ export default function Quotation({ menuOpen }: QuotationProps) {
     Matambre: "/images/matambre.png",
     Entraña: "/images/entraña.png",
     Falda: "/images/falda.png",
-    Frío: "/icons/bolsa-de-hielo.png",
+    Frío: "/icons/camara-frio.png",
     Chingolo: "/images/chingolo.png",
     Aguja: "/images/aguja.png",
     Brazuelo: "/images/brazuelo.png",
@@ -85,6 +105,24 @@ export default function Quotation({ menuOpen }: QuotationProps) {
     "Corazón de cuadril": "/images/corazon_de_cuadril.png",
     "Bife ancho sin tapa": "/images/bife_ancho_sin_tapa.png",
     "Tapa de cuadril": "/images/tapa_de_cuadril.png",
+    "Manipuleo de ral": "/icons/cuchillo.png",
+    "Manipuleo de rueda": "/icons/cuchillo.png",
+    "Manipuleo de parrillero": "/icons/cuchillo.png",
+    "Manipuleo de delantero": "/icons/cuchillo.png",
+    "Hueso de ral": "/images/hueso.png",
+    "Hueso de rueda": "/images/hueso.png",
+    "Hueso de delantero": "/images/hueso.png",
+    "Recortes de ral": "/images/recortes.png",
+    "Recortes de rueda": "/images/recortes.png",
+    "Recortes de delantero": "/images/recortes.png",
+    "Grasa de ral": "/images/grasa.png",
+    "Grasa de rueda": "/images/grasa.png",
+    "Grasa de parrillero": "/images/grasa.png",
+    "Grasa de delantero": "/images/grasa.png",
+    Delantero: "/images/delantero.png",
+    Rueda: "/images/rueda.png",
+    Ral: "/images/ral.png",
+    Parrillero: "/images/parrillero.png",
   };
 
   useEffect(() => {
@@ -679,6 +717,65 @@ export default function Quotation({ menuOpen }: QuotationProps) {
 
   return (
     <div className="flex flex-1 flex-col p-6 overflow-hidden">
+      {/* Pop-up de ayuda para Tab */}
+      {showTabHint && usdPerKgNum > 0 && mediaResWeightNum > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+          <div className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl px-8 py-7 max-w-md w-full flex flex-col items-center animate-fade-in">
+            <div className="absolute -top-8 left-1/2 -translate-x-1/2 flex flex-col items-center">
+              {/* Flecha hacia abajo */}
+              <svg
+                className="w-10 h-10 text-blue-400 animate-bounce"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 4v16m0 0l-6-6m6 6l6-6"
+                />
+              </svg>
+              <span className="text-xs text-blue-400 font-semibold mt-1">
+                Primer campo disponible
+              </span>
+            </div>
+            <div className="flex items-center gap-3 mb-4 mt-6">
+              <kbd className="px-3 py-1 rounded bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-lg font-bold text-blue-500 shadow">
+                Tab
+              </kbd>
+              <span className="text-lg text-gray-700 dark:text-gray-200 font-medium">
+                para avanzar más rápido entre los precios
+              </span>
+            </div>
+            <p className="text-gray-500 text-center mb-6">
+              Podés usar la tecla{" "}
+              <span className="font-semibold text-blue-500">Tab</span> para
+              saltar al siguiente campo de precio y cargar los valores más
+              ágilmente.
+            </p>
+            <button
+              onClick={handleDismissTabHint}
+              className="flex items-center gap-2 px-6 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-semibold text-lg shadow transition-all cursor-pointer"
+            >
+              <svg
+                className="w-6 h-6"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M5 13l4 4L19 7"
+                />
+              </svg>
+              ¡Entendido!
+            </button>
+          </div>
+        </div>
+      )}
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-[var(--foreground)] mb-6">
           Gestionar Cotización
@@ -1109,26 +1206,50 @@ export default function Quotation({ menuOpen }: QuotationProps) {
                   Última actualización: <span>{lastUpdate}</span>
                 </p>
                 {/* Mensaje explicativo del borde azul */}
-                <div className="mt-5 flex items-center gap-2 text-sm text-gray-400">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    strokeWidth={2}
-                    stroke="currentColor"
-                    className="w-4 h-4 text-gray-600"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                    />
-                  </svg>
-                  <span className="font-medium">
-                    Los cortes con{" "}
-                    <span className="text-blue-500 font-bold">borde azul</span>{" "}
-                    son los seleccionados por el negocio.
-                  </span>
+                <div className="mt-5 flex flex-col gap-1">
+                  <div className="flex items-center gap-2 text-sm text-gray-400">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth={2}
+                      stroke="currentColor"
+                      className="w-4 h-4 text-gray-600"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                    <span className="font-medium">
+                      Los cortes con{" "}
+                      <span className="text-blue-500 font-bold">
+                        borde azul
+                      </span>{" "}
+                      son los seleccionados por el negocio.
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm text-gray-400">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth={2}
+                      stroke="currentColor"
+                      className="w-4 h-4 text-gray-600"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                    <span className="font-medium">
+                      Las imágenes de recortes, manipuleo, hueso, grasa y frío
+                      son ilustrativas.
+                    </span>
+                  </div>
                 </div>
               </div>
             )}
@@ -1262,9 +1383,27 @@ export default function Quotation({ menuOpen }: QuotationProps) {
                 <Image
                   src={selectedCutImage}
                   alt="Corte seleccionado"
-                  width={400}
-                  height={300}
-                  className="w-full h-auto rounded-md"
+                  width={
+                    selectedCutImage === "/icons/cuchillo.png"
+                      ? 150
+                      : selectedCutImage === "/icons/bolsa-de-hielo.png"
+                      ? 96
+                      : 256
+                  }
+                  height={
+                    selectedCutImage === "/icons/cuchillo.png"
+                      ? 150
+                      : selectedCutImage === "/icons/bolsa-de-hielo.png"
+                      ? 96
+                      : 256
+                  }
+                  className={`rounded-md ${
+                    selectedCutImage === "/icons/cuchillo.png"
+                      ? "object-contain w-[150px] h-[150px] mx-auto"
+                      : selectedCutImage === "/icons/bolsa-de-hielo.png"
+                      ? "object-contain w-24 h-24 mx-auto"
+                      : "object-contain w-64 h-64 mx-auto"
+                  }`}
                 />
               ) : (
                 <div className="w-full h-64 bg-gray-200 rounded-md flex items-center justify-center text-gray-500">
