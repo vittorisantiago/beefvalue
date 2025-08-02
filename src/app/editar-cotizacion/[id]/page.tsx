@@ -83,6 +83,9 @@ export default function EditarCotizacion({ menuOpen }: QuotationProps) {
   const { id } = useParams();
 
   const imageMap: Record<string, string> = {
+    "Tapa de bife ancho": "/images/tapa_de_bife_ancho.png",
+    "Bife angosto sin cordón": "/images/bife_angosto_sin_cordon.png",
+    "Lomo sin cordón": "/images/lomo_sin_cordon.png",
     "Colita de cuadril": "/images/colita_de_cuadril.png",
     "Nalga sin tapa": "/images/nalga_de_adentro_sin_tapa.png",
     "Tapa de nalga": "/images/tapa_de_nalga.png",
@@ -96,7 +99,7 @@ export default function EditarCotizacion({ menuOpen }: QuotationProps) {
     Matambre: "/images/matambre.png",
     Entraña: "/images/entraña.png",
     Falda: "/images/falda.png",
-    Frío: "/icons/bolsa-de-hielo.png",
+    Frío: "/icons/camara-frio.png",
     Chingolo: "/images/chingolo.png",
     Aguja: "/images/aguja.png",
     Brazuelo: "/images/brazuelo.png",
@@ -106,6 +109,24 @@ export default function EditarCotizacion({ menuOpen }: QuotationProps) {
     "Corazón de cuadril": "/images/corazon_de_cuadril.png",
     "Bife ancho sin tapa": "/images/bife_ancho_sin_tapa.png",
     "Tapa de cuadril": "/images/tapa_de_cuadril.png",
+    "Manipuleo de ral": "/icons/cuchillo.png",
+    "Manipuleo de rueda": "/icons/cuchillo.png",
+    "Manipuleo de parrillero": "/icons/cuchillo.png",
+    "Manipuleo de delantero": "/icons/cuchillo.png",
+    "Hueso de ral": "/images/hueso.png",
+    "Hueso de rueda": "/images/hueso.png",
+    "Hueso de delantero": "/images/hueso.png",
+    "Recortes de ral": "/images/recortes.png",
+    "Recortes de rueda": "/images/recortes.png",
+    "Recortes de delantero": "/images/recortes.png",
+    "Grasa de ral": "/images/grasa.png",
+    "Grasa de rueda": "/images/grasa.png",
+    "Grasa de parrillero": "/images/grasa.png",
+    "Grasa de delantero": "/images/grasa.png",
+    Delantero: "/images/delantero.png",
+    Rueda: "/images/rueda.png",
+    Ral: "/images/ral.png",
+    Parrillero: "/images/parrillero.png",
   };
 
   useEffect(() => {
@@ -789,6 +810,7 @@ export default function EditarCotizacion({ menuOpen }: QuotationProps) {
         editBusinessId={editBusinessId}
         onSave={handleBusinessSave}
         onDelete={handleBusinessDelete}
+        onCancelDelete={() => setConfirmDelete(null)}
         confirmDelete={confirmDelete}
         cuts={Object.fromEntries(
           Object.entries(cuts).map(([name, cut]) => [
