@@ -170,6 +170,23 @@ export default function Layout({ children }: LayoutProps) {
       ),
     },
     {
+      name: "Gestionar Costos",
+      href: "/costos",
+      permission: "Gestionar Costos",
+      icon: (
+        <svg
+          className="w-5 h-5 mr-3"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+          strokeWidth="2"
+        >
+          <rect x="3" y="6" width="18" height="12" rx="2" ry="2" />
+          <circle cx="12" cy="12" r="3" />
+        </svg>
+      ),
+    },
+    {
       name: "Reportes",
       href: "/reportes",
       permission: "Reportes",
@@ -186,6 +203,23 @@ export default function Layout({ children }: LayoutProps) {
             strokeWidth="2"
             d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
           />
+        </svg>
+      ),
+    },
+    {
+      name: "Auditorías",
+      href: "/auditorias",
+      permission: "Auditorías",
+      icon: (
+        <svg
+          className="w-5 h-5 mr-3"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+          strokeWidth="2"
+        >
+          <circle cx="11" cy="11" r="7" />
+          <line x1="16.5" y1="16.5" x2="21" y2="21" />
         </svg>
       ),
     },
