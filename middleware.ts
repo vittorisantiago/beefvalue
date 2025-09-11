@@ -45,6 +45,8 @@ export async function middleware(req: NextRequest) {
       { path: "/historial", permission: "Historial Cotizaciones" },
       { path: "/reportes", permission: "Reportes" },
       { path: "/gestion-usuarios", permission: "Gestionar Usuarios" },
+      { path: "/costos", permission: "Gestionar Costos" },
+      { path: "/auditorias", permission: "Auditorías" },
     ];
 
     // Manejo de usuarios no autenticados
