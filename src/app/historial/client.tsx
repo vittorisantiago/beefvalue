@@ -7,6 +7,9 @@ import Layout from "@/app/components/Layout";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
+// === COSTOS: tipos auxiliares
+type Moneda = "USD" | "ARS" | "ARS + IVA";
+
 interface Quotation {
   id: string;
   created_at: string;
@@ -16,11 +19,12 @@ interface Quotation {
   dollar_rate: number;
   total_initial_usd: number;
   total_cuts_usd: number;
-  difference_usd: number;
-  difference_percentage: number;
+  difference_usd: number; // SIN costos
+  difference_percentage: number; // SIN costos
 }
 
 interface QuotationCutPDF {
+  qcutId: string;
   name: string;
   percentage: number;
   macro: string | null;
@@ -28,9 +32,21 @@ interface QuotationCutPDF {
   priceARS: number;
   priceARSIVA: number;
   priceUSD: number;
-  currency: string;
+  currency: Moneda;
   notes: string;
 }
+
+/* interface QuotationCostPDF {
+  quotation_cut_id: string;
+  cutName: string;
+  costName: string;
+  currency: Moneda;
+  priceARS: number;
+  priceARSIVA: number;
+  priceUSD: number;
+  notes: string;
+}
+*/
 
 export default function HistorialClient() {
   const [quotations, setQuotations] = useState<Quotation[]>([]);
@@ -44,6 +60,9 @@ export default function HistorialClient() {
   const [searchTerm, setSearchTerm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [permissions, setPermissions] = useState<string[]>([]);
+  const [costTotalsUSD, setCostTotalsUSD] = useState<Record<string, number>>(
+    {}
+  ); // COSTOS: totales por quotation_id
   const router = useRouter();
   const itemsPerPage = 10;
 
@@ -54,20 +73,17 @@ export default function HistorialClient() {
         data: { session },
         error: sessionError,
       } = await supabase.auth.getSession();
-
       if (sessionError || !session) {
-        window.location.href = "/"; // Redirige si no hay sesión
+        window.location.href = "/";
         return;
       }
-
       const userId = session.user.id;
 
-      // Obtener permisos del usuario
+      // Permisos
       const { data: groupData, error: groupError } = await supabase
         .from("user_groups")
         .select("group_id")
         .eq("user_id", userId);
-
       if (groupError) {
         setError(groupError.message);
         setLoading(false);
@@ -81,7 +97,6 @@ export default function HistorialClient() {
           .from("group_permissions")
           .select("permission_id")
           .in("group_id", groupIds);
-
         if (permError) {
           setError(permError.message);
           setLoading(false);
@@ -93,7 +108,6 @@ export default function HistorialClient() {
           .from("permissions")
           .select("name")
           .in("id", permissionIds);
-
         if (nameError) {
           setError(nameError.message);
           setLoading(false);
@@ -103,14 +117,12 @@ export default function HistorialClient() {
         permNames.forEach((p) => userPermissions.add(p.name));
         setPermissions([...userPermissions]);
       }
-
-      // Verificar permiso "Historial Cotizaciones"
       if (!userPermissions.has("Historial Cotizaciones")) {
-        window.location.href = "/"; // Redirige si no tiene permiso
+        window.location.href = "/";
         return;
       }
 
-      // Fetch quotations solo si tiene permiso
+      // === Cotizaciones (con count para paginar)
       const { data, error, count } = await supabase
         .from("quotations")
         .select(
@@ -125,38 +137,76 @@ export default function HistorialClient() {
           total_cuts_usd,
           difference_usd,
           difference_percentage
-        `
+        `,
+          { count: "exact" }
         )
-        .eq("user_id", userId) // Añadido filtro por user_id
+        .eq("user_id", userId)
         .order("created_at", { ascending: sortOrder === "asc" })
         .range((page - 1) * itemsPerPage, page * itemsPerPage - 1);
 
       if (error) {
         setError(error.message);
-      } else {
-        const mappedQuotations: Quotation[] = (data || []).map((item) => {
-          const businessObj = Array.isArray(item.business)
-            ? item.business[0]
-            : item.business;
-          return {
-            id: item.id,
-            created_at: item.created_at,
-            business:
-              businessObj && businessObj.name
-                ? { name: businessObj.name }
-                : { name: "Sin negocio" },
-            media_res_weight: item.media_res_weight,
-            usd_per_kg: item.usd_per_kg,
-            dollar_rate: item.dollar_rate,
-            total_initial_usd: item.total_initial_usd,
-            total_cuts_usd: item.total_cuts_usd,
-            difference_usd: item.difference_usd,
-            difference_percentage: item.difference_percentage,
-          };
-        });
-        setQuotations(mappedQuotations);
-        setTotalPages(Math.ceil((count || 0) / itemsPerPage));
+        setLoading(false);
+        return;
       }
+
+      const mapped: Quotation[] = (data || []).map((item) => {
+        const businessObj = Array.isArray(item.business)
+          ? item.business[0]
+          : item.business;
+        return {
+          id: item.id,
+          created_at: item.created_at,
+          business: businessObj?.name
+            ? { name: businessObj.name }
+            : { name: "Sin negocio" },
+          media_res_weight: item.media_res_weight,
+          usd_per_kg: item.usd_per_kg,
+          dollar_rate: item.dollar_rate,
+          total_initial_usd: item.total_initial_usd,
+          total_cuts_usd: item.total_cuts_usd,
+          difference_usd: item.difference_usd,
+          difference_percentage: item.difference_percentage,
+        };
+      });
+      setQuotations(mapped);
+      setTotalPages(Math.max(1, Math.ceil((count || 0) / itemsPerPage)));
+
+      // === COSTOS: una sola query para los ids de esta página
+      const ids = mapped.map((q) => q.id);
+      if (ids.length) {
+        const { data: costsPage, error: costsErr } = await supabase
+          .from("quotation_cut_costs")
+          .select("quotation_id, currency, price_ars, price_ars_iva, price_usd")
+          .in("quotation_id", ids);
+
+        if (!costsErr && costsPage) {
+          const totals: Record<string, number> = {};
+          for (const row of costsPage as {
+            quotation_id: string;
+            currency: Moneda;
+            price_ars: number;
+            price_ars_iva: number;
+            price_usd: number;
+          }[]) {
+            const rate =
+              mapped.find((q) => q.id === row.quotation_id)?.dollar_rate || 1;
+            const usd =
+              row.currency === "USD"
+                ? -(row.price_usd || 0)
+                : row.currency === "ARS + IVA"
+                ? -((row.price_ars_iva || 0) / 1.105 / rate)
+                : -((row.price_ars || 0) / rate);
+            totals[row.quotation_id] = (totals[row.quotation_id] || 0) + usd;
+          }
+          setCostTotalsUSD(totals);
+        } else {
+          setCostTotalsUSD({});
+        }
+      } else {
+        setCostTotalsUSD({});
+      }
+
       setLoading(false);
     };
 
@@ -174,10 +224,35 @@ export default function HistorialClient() {
     }
   };
 
-  const handleEdit = (id: string) => {
-    router.push(`/editar-cotizacion/${id}`);
-  };
+  const handleEdit = (id: string) => router.push(`/editar-cotizacion/${id}`);
 
+  // === COSTOS: helpers
+  function currencyToField(currency: string) {
+    if (currency === "USD") return "priceUSD";
+    if (currency === "ARS + IVA") return "priceARSIVA";
+    if (currency === "ARS") return "priceARS";
+    return "priceUSD";
+  }
+  const fmt = (n: number) =>
+    n.toLocaleString("es-AR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  /*
+  const convertToUSD = (
+    currency: Moneda,
+    ars: number,
+    arsIva: number,
+    usd: number,
+    dollarRate: number
+  ) => {
+    if (currency === "USD") return usd || 0;
+    if (currency === "ARS + IVA")
+      return (arsIva || 0) / 1.105 / (dollarRate || 1);
+    if (currency === "ARS") return (ars || 0) / (dollarRate || 1);
+    return 0;
+  };
+*/
   // Descargar PDF de cotización
   const handleDownload = async (quotation: Quotation) => {
     // Obtener los cortes de la cotización
@@ -198,6 +273,7 @@ export default function HistorialClient() {
         cutObj = cutObjRaw;
       }
       return {
+        qcutId: typeof c.cut_id === "string" ? c.cut_id : "",
         name: cutObj && typeof cutObj.name === "string" ? cutObj.name : "-",
         percentage:
           cutObj && typeof cutObj.percentage === "number"
@@ -218,6 +294,61 @@ export default function HistorialClient() {
         notes: c.notes || "-",
       };
     });
+
+    // === COSTOS: obtener los costos asociados a la cotización
+    const { data: costsData } = await supabase
+      .from("quotation_cut_costs")
+      .select(
+        `cut_id, cost_item_id, currency, price_ars, price_ars_iva, price_usd, notes, cuts:cut_id(name), cost_items:cost_item_id(name)`
+      )
+      .eq("quotation_id", quotation.id);
+    // Normalizar costos
+    const costs = ((costsData as Record<string, unknown>[]) || []).map(
+      (row) => {
+        const cutName =
+          (row.cuts as { name?: string } | undefined)?.name || "-";
+        const costName =
+          (row.cost_items as { name?: string } | undefined)?.name || "-";
+        const currency = row.currency as Moneda;
+        const priceARS = typeof row.price_ars === "number" ? row.price_ars : 0;
+        const priceARSIVA =
+          typeof row.price_ars_iva === "number" ? row.price_ars_iva : 0;
+        const priceUSD = typeof row.price_usd === "number" ? row.price_usd : 0;
+        const notes = typeof row.notes === "string" ? row.notes : "-";
+        let usdValue = 0;
+        if (currency === "USD") {
+          usdValue = priceUSD;
+        } else if (currency === "ARS + IVA" && quotation.dollar_rate) {
+          usdValue = priceARSIVA / 1.105 / quotation.dollar_rate;
+        } else if (currency === "ARS" && quotation.dollar_rate) {
+          usdValue = priceARS / quotation.dollar_rate;
+        }
+        return {
+          cutName,
+          costName,
+          currency,
+          priceARS,
+          priceARSIVA,
+          priceUSD,
+          notes,
+          usdValue,
+        };
+      }
+    );
+    // El valor de costos siempre debe ser positivo y RESTAR
+    const totalCostsUSD = costs.reduce(
+      (acc, c) => acc - Math.abs(c.usdValue),
+      0
+    );
+    // Calcular diferencia final con costos: totalInicialUSD - totalCortesUSD - totalCostosUSD
+    const difFinalUSD =
+      (quotation.total_initial_usd || 0) -
+      (quotation.total_cuts_usd || 0) -
+      totalCostsUSD;
+    const difFinalPct =
+      (quotation.total_initial_usd || 0) > 0
+        ? (difFinalUSD / quotation.total_initial_usd) * 100
+        : 0;
     // Crear PDF
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -281,13 +412,22 @@ export default function HistorialClient() {
     );
     y += 6;
     doc.text(
-      `Diferencia: ${quotation.difference_usd > 0 ? "-" : "+"}$${Math.abs(
-        quotation.difference_usd
+      `Costos: $${totalCostsUSD.toLocaleString("es-AR", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })} USD`,
+      14,
+      y
+    );
+    y += 6;
+    doc.text(
+      `Dif. Final: ${difFinalUSD < 0 ? "+" : "-"}$${Math.abs(
+        difFinalUSD
       ).toLocaleString("es-AR", {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
-      })} USD (${quotation.difference_usd > 0 ? "-" : "+"}${Math.abs(
-        quotation.difference_percentage
+      })} USD (${difFinalUSD < 0 ? "+" : "-"}${Math.abs(difFinalPct).toFixed(
+        2
       )}%)`,
       14,
       y
@@ -364,6 +504,68 @@ export default function HistorialClient() {
       margin: { left: 10, right: 10 },
       theme: "grid",
     });
+
+    // Cuadro de costos: salto de página para evitar superposición
+    doc.addPage();
+    let afterTableY = 20;
+    doc.setFontSize(16);
+    doc.text("Cuadro de Costos", pageWidth / 2, afterTableY, {
+      align: "center",
+    });
+    afterTableY += 6;
+    autoTable(doc, {
+      startY: afterTableY,
+      head: [
+        [
+          "Corte",
+          "Costo",
+          "Moneda",
+          "Precio ARS",
+          "Precio ARS+IVA",
+          "Precio USD",
+          "USD Final",
+          "Notas",
+        ],
+      ],
+      body:
+        costs.length > 0
+          ? costs.map((c) => [
+              c.cutName,
+              c.costName,
+              c.currency,
+              c.priceARS > 0
+                ? c.priceARS.toLocaleString("es-AR", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })
+                : "-",
+              c.priceARSIVA > 0
+                ? c.priceARSIVA.toLocaleString("es-AR", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })
+                : "-",
+              c.priceUSD > 0
+                ? c.priceUSD.toLocaleString("es-AR", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })
+                : "-",
+              c.usdValue > 0
+                ? c.usdValue.toLocaleString("es-AR", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })
+                : "-",
+              c.notes,
+            ])
+          : [["No hay costos registrados", "", "", "", "", "", "", ""]],
+      styles: { fontSize: 10 },
+      headStyles: { fillColor: [22, 163, 74] },
+      margin: { left: 10, right: 10 },
+      theme: "grid",
+    });
+
     // Descargar
     doc.save(
       `beefvalue_cotizacion_${quotation.business.name.replace(
@@ -373,7 +575,7 @@ export default function HistorialClient() {
     );
   };
 
-  // Filtrar cotizaciones por nombre de negocio
+  // Filtrar por negocio
   const filteredQuotations = quotations.filter((q) =>
     q.business.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -417,6 +619,7 @@ export default function HistorialClient() {
         <h1 className="text-3xl font-bold text-[var(--foreground)] mb-6">
           Historial de Cotizaciones
         </h1>
+
         <div className="flex flex-col md:flex-row md:justify-between mb-4 gap-4">
           <button
             onClick={() => setSortOrder(sortOrder === "desc" ? "asc" : "desc")}
@@ -452,6 +655,7 @@ export default function HistorialClient() {
             </button>
           </div>
         </div>
+
         <div className="overflow-x-auto">
           <table className="w-full text-[var(--foreground)]">
             <thead>
@@ -463,120 +667,139 @@ export default function HistorialClient() {
                 <th className="p-2 text-left">Dólar</th>
                 <th className="p-2 text-left">Total Inicial (USD)</th>
                 <th className="p-2 text-left">Total Cortes (USD)</th>
-                <th className="p-2 text-left">Diferencia (USD)</th>
-                <th className="p-2 text-left">Diferencia (%)</th>
+                <th className="p-2 text-left">Dif. (USD, sin costos)</th>
+                <th className="p-2 text-left">Dif. (%) sin costos</th>
+                {/* COSTOS: nuevas columnas */}
+                <th className="p-2 text-left">Costos (USD)</th>
+                <th className="p-2 text-left">Dif. Final (USD)</th>
+                <th className="p-2 text-left">Dif. Final (%)</th>
                 <th className="p-2 text-left">Acciones</th>
               </tr>
             </thead>
             <tbody>
-              {filteredQuotations.map((quotation, i) => (
-                <tr
-                  key={quotation.id}
-                  className={i % 2 === 0 ? "bg-white dark:bg-gray-800" : ""}
-                >
-                  <td className="p-2">
-                    {new Date(quotation.created_at).toLocaleString("es-AR", {
-                      day: "2-digit",
-                      month: "2-digit",
-                      year: "numeric",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </td>
-                  <td className="p-2">{quotation.business.name}</td>
-                  <td className="p-2">{quotation.media_res_weight}</td>
-                  <td className="p-2">{quotation.usd_per_kg}</td>
-                  <td className="p-2">{quotation.dollar_rate}</td>
-                  <td className="p-2">
-                    {quotation.total_initial_usd.toLocaleString("es-AR", {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
-                  </td>
-                  <td className="p-2">
-                    {quotation.total_cuts_usd.toLocaleString("es-AR", {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
-                  </td>
-                  <td className="p-2">
-                    {quotation.difference_usd > 0 ? "-" : "+"}
-                    {Math.abs(quotation.difference_usd).toLocaleString(
-                      "es-AR",
-                      {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      }
-                    )}
-                  </td>
-                  <td className="p-2">
-                    {quotation.difference_percentage > 0 ? "-" : "+"}
-                    {Math.abs(quotation.difference_percentage)}%
-                  </td>
-                  <td className="p-2 flex gap-2">
-                    <button
-                      onClick={() => handleEdit(quotation.id)}
-                      className="px-3 py-1 bg-yellow-500 text-white rounded-md hover:bg-yellow-600 transition-all flex items-center gap-1 cursor-pointer"
-                    >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        strokeWidth={2}
-                        stroke="currentColor"
-                        className="w-5 h-5"
+              {filteredQuotations.map((q, i) => {
+                const costos = costTotalsUSD[q.id] || 0;
+                const difFinal = (q.difference_usd || 0) - costos;
+                const difFinalPct =
+                  (q.total_initial_usd || 0) > 0
+                    ? (difFinal / q.total_initial_usd) * 100
+                    : 0;
+
+                return (
+                  <tr
+                    key={q.id}
+                    className={i % 2 === 0 ? "bg-white dark:bg-gray-800" : ""}
+                  >
+                    <td className="p-2">
+                      {new Date(q.created_at).toLocaleString("es-AR", {
+                        day: "2-digit",
+                        month: "2-digit",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </td>
+                    <td className="p-2">{q.business.name}</td>
+                    <td className="p-2">{q.media_res_weight}</td>
+                    <td className="p-2">{q.usd_per_kg}</td>
+                    <td className="p-2">{q.dollar_rate}</td>
+                    <td className="p-2">{fmt(q.total_initial_usd)}</td>
+                    <td className="p-2">{fmt(q.total_cuts_usd)}</td>
+
+                    {/* === SIGNO CORRECTO SIN COSTOS */}
+                    <td className="p-2">
+                      {q.difference_usd > 0
+                        ? "-"
+                        : q.difference_usd < 0
+                        ? "+ "
+                        : ""}
+                      {fmt(Math.abs(q.difference_usd))}
+                    </td>
+                    <td className="p-2">
+                      {q.difference_percentage > 0
+                        ? "-"
+                        : q.difference_percentage < 0
+                        ? "+"
+                        : ""}
+                      {fmt(Math.abs(q.difference_percentage))}%
+                    </td>
+
+                    {/* COSTOS y DIF FINAL */}
+                    <td className="p-2">{fmt(costos)}</td>
+                    <td className="p-2">
+                      {difFinal > 0 ? "- " : difFinal < 0 ? "+" : ""}
+                      {fmt(Math.abs(difFinal))}
+                    </td>
+                    <td className="p-2">
+                      {difFinalPct > 0 ? "- " : difFinalPct < 0 ? "+" : ""}
+                      {fmt(Math.abs(difFinalPct))}%
+                    </td>
+
+                    <td className="p-2 flex gap-2">
+                      <button
+                        onClick={() => handleEdit(q.id)}
+                        className="px-3 py-1 bg-yellow-500 text-white rounded-md hover:bg-yellow-600 transition-all flex items-center gap-1 cursor-pointer"
                       >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125"
-                        />
-                      </svg>
-                      Editar
-                    </button>
-                    <button
-                      onClick={() => setShowDeleteConfirmation(quotation.id)}
-                      className="px-3 py-1 bg-red-600 text-white rounded-md hover:bg-red-700 transition-all flex items-center gap-1 cursor-pointer"
-                    >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        strokeWidth={2}
-                        stroke="currentColor"
-                        className="w-5 h-5"
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          strokeWidth={2}
+                          stroke="currentColor"
+                          className="w-5 h-5"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125"
+                          />
+                        </svg>
+                        Editar
+                      </button>
+                      <button
+                        onClick={() => setShowDeleteConfirmation(q.id)}
+                        className="px-3 py-1 bg-red-600 text-white rounded-md hover:bg-red-700 transition-all flex items-center gap-1 cursor-pointer"
                       >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
-                        />
-                      </svg>
-                      Eliminar
-                    </button>
-                    <button
-                      onClick={() => handleDownload(quotation)}
-                      className="px-3 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-all flex items-center gap-1 cursor-pointer"
-                    >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        strokeWidth={2}
-                        stroke="currentColor"
-                        className="w-5 h-5"
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          strokeWidth={2}
+                          stroke="currentColor"
+                          className="w-5 h-5"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
+                          />
+                        </svg>
+                        Eliminar
+                      </button>
+                      <button
+                        onClick={() => handleDownload(q)}
+                        className="px-3 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-all flex items-center gap-1 cursor-pointer"
                       >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4"
-                        />
-                      </svg>
-                      Descargar
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          strokeWidth={2}
+                          stroke="currentColor"
+                          className="w-5 h-5"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4"
+                          />
+                        </svg>
+                        Descargar
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -599,7 +822,7 @@ export default function HistorialClient() {
                   Cancelar
                 </button>
                 <button
-                  onClick={() => handleDelete(showDeleteConfirmation)}
+                  onClick={() => handleDelete(showDeleteConfirmation!)}
                   className="px-5 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-all flex items-center gap-2 cursor-pointer text-lg font-medium"
                 >
                   <svg
@@ -625,12 +848,4 @@ export default function HistorialClient() {
       </div>
     </Layout>
   );
-}
-
-// Helper para obtener el campo correcto según la moneda
-function currencyToField(currency: string) {
-  if (currency === "USD") return "priceUSD";
-  if (currency === "ARS + IVA") return "priceARSIVA";
-  if (currency === "ARS") return "priceARS";
-  return "priceUSD";
 }
