@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import Image from "next/image";
 import CutItem from "./CutItem";
 import BusinessModal from "./BusinessModal";
 import { fetchCuts, macros, type Cut } from "@/lib/cuts";
+import CostsManager from "./CostsManager";
 
 interface Business {
   id: string;
@@ -69,6 +70,16 @@ export default function Quotation({ menuOpen }: QuotationProps) {
       setShowTabHint(!window.localStorage.getItem(key));
     }
   }, [userId]);
+
+  // Nuevo estado en el padre
+  type CostRow = {
+    cutId: string;
+    costItemId: string;
+    currency: "ARS" | "USD" | "ARS + IVA";
+    prices: { ARS: number; "ARS + IVA": number; USD: number };
+    notes: string;
+  };
+  const [costsByCut, setCostsByCut] = useState<CostRow[]>([]);
 
   const handleDismissTabHint = () => {
     setShowTabHint(false);
@@ -243,6 +254,48 @@ export default function Quotation({ menuOpen }: QuotationProps) {
     return displayCuts;
   }, [businesses, selectedBusiness, cuts]);
 
+  const cutsForCosts = useMemo(() => {
+    return getDisplayCuts().map((name) => ({
+      id: cuts[name].id,
+      name,
+    }));
+  }, [getDisplayCuts, cuts]);
+
+  // Cortes excluidos para validación de costos
+  const excludedCutsSet = useMemo(
+    () =>
+      new Set([
+        "Manipuleo de ral",
+        "Frío",
+        "Hueso de rueda",
+        "Grasa de parrillero",
+        "Manipuleo de rueda",
+        "Manipuleo de delantero",
+        "Grasa de delantero",
+        "Hueso de delantero",
+        "Hueso de ral",
+        "Grasa de ral",
+        "Grasa de rueda",
+        "Manipuleo de parrillero",
+      ]),
+    []
+  );
+
+  const validateCosts = useCallback(() => {
+    const displayCuts = getDisplayCuts();
+    // Solo cortes que no están en la lista de excluidos
+    const requiredCutIds = new Set(
+      displayCuts
+        .filter((name) => !excludedCutsSet.has(name))
+        .map((name) => cuts[name].id)
+    );
+    const covered = new Set(costsByCut.map((r) => r.cutId));
+    for (const cid of requiredCutIds) {
+      if (!covered.has(cid)) return false;
+    }
+    return true;
+  }, [costsByCut, cuts, getDisplayCuts, excludedCutsSet]);
+
   const validatePrices = useCallback(() => {
     const displayCuts = getDisplayCuts();
     const missing: string[] = [];
@@ -304,6 +357,7 @@ export default function Quotation({ menuOpen }: QuotationProps) {
       });
       return resetCuts;
     });
+    setCostsByCut([]);
   };
 
   const handleCutChange = (
@@ -391,6 +445,27 @@ export default function Quotation({ menuOpen }: QuotationProps) {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
+  };
+
+  // Calcular el total de costos en USD
+  const calculateTotalCostsUSD = () => {
+    if (!dollarRate) return 0;
+    let total = 0;
+    costsByCut.forEach((row: CostRow) => {
+      const price = row.prices[row.currency];
+      if (price > 0) {
+        let usdValue = 0;
+        if (row.currency === "USD") {
+          usdValue = price;
+        } else if (row.currency === "ARS + IVA") {
+          usdValue = price / 1.105 / dollarRate;
+        } else if (row.currency === "ARS") {
+          usdValue = price / dollarRate;
+        }
+        total -= usdValue; // Restar cada costo
+      }
+    });
+    return total;
   };
 
   const calculateTotalPercentage = () => {
@@ -598,6 +673,13 @@ export default function Quotation({ menuOpen }: QuotationProps) {
       return;
     }
 
+    // Validar COSTOS
+    if (!validateCosts()) {
+      setErrorMessage("Cada corte debe tener al menos un costo asignado.");
+      setShowErrorPopup(true);
+      return;
+    }
+
     // Si ambas validaciones pasan, guardar la cotización
     try {
       const totalInitialUSDNum =
@@ -648,6 +730,26 @@ export default function Quotation({ menuOpen }: QuotationProps) {
       if (cutsError)
         throw new Error(`Error saving quotation cuts: ${cutsError.message}`);
 
+      // Guardar costos por corte
+      const costRows = costsByCut.map((r) => ({
+        quotation_id: quotationData.id,
+        cut_id: r.cutId,
+        cost_item_id: r.costItemId,
+        currency: r.currency,
+        price_ars: r.prices.ARS,
+        price_ars_iva: r.prices["ARS + IVA"],
+        price_usd: r.prices.USD,
+        notes: r.notes,
+      }));
+
+      if (costRows.length > 0) {
+        const { error: qccError } = await supabase
+          .from("quotation_cut_costs")
+          .insert(costRows);
+        if (qccError)
+          throw new Error(`Error saving quotation costs: ${qccError.message}`);
+      }
+
       // Actualizar el estado de businessHasQuotations
       if (selectedBusiness) {
         setBusinessHasQuotations((prev) => ({
@@ -668,6 +770,8 @@ export default function Quotation({ menuOpen }: QuotationProps) {
       setShowErrorPopup(true);
     }
   };
+
+  // ...existing code...
 
   // Refs para inputs de precio
   const priceInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -698,6 +802,16 @@ export default function Quotation({ menuOpen }: QuotationProps) {
     totalInitialUSDNum === 0
       ? 0
       : Number(((differenceUSD / totalInitialUSDNum) * 100).toFixed(2));
+
+  // Nueva diferencia con costos
+  const totalCostsUSD = calculateTotalCostsUSD();
+  const differenceWithCostsUSD = differenceUSD - totalCostsUSD;
+  const differenceWithCostsPercentage =
+    totalInitialUSDNum === 0
+      ? 0
+      : Number(
+          ((differenceWithCostsUSD / totalInitialUSDNum) * 100).toFixed(2)
+        );
 
   // Función para manejar el tab custom en inputs de precio
   const handlePriceKeyDown = (
@@ -1004,17 +1118,30 @@ export default function Quotation({ menuOpen }: QuotationProps) {
 
       {showErrorPopup && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-30">
-          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md shadow-lg">
-            <h3 className="text-xl font-semibold text-[var(--foreground)] mb-4">
-              Error
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md shadow-lg text-center">
+            <svg
+              className="w-14 h-14 mx-auto mb-4 text-yellow-400 animate-bounce"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+            <h3 className="text-2xl font-bold text-yellow-600 dark:text-yellow-400 mb-2">
+              Faltan Costos
             </h3>
             <p className="text-lg text-[var(--foreground)] mb-6">
               {errorMessage}
             </p>
-            <div className="flex justify-end">
+            <div className="flex justify-center">
               <button
                 onClick={() => setShowErrorPopup(false)}
-                className="px-5 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-all cursor-pointer text-lg font-medium"
+                className="px-5 py-2 bg-yellow-500 text-white rounded-md hover:bg-yellow-600 transition-all cursor-pointer text-lg font-medium"
               >
                 Cerrar
               </button>
@@ -1539,13 +1666,32 @@ export default function Quotation({ menuOpen }: QuotationProps) {
                         differenceUSD > 0 ? "text-red-500" : "text-green-500"
                       }`}
                     >
-                      Diferencia: {differenceUSD > 0 ? "-" : "+"}$
+                      Diferencia sin Costos: {differenceUSD > 0 ? "-" : "+"}$
                       {Math.abs(differenceUSD).toLocaleString("es-AR", {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,
                       })}{" "}
                       USD ({differenceUSD > 0 ? "-" : "+"}
                       {Math.abs(differencePercentage)}%)
+                    </p>
+                    <p
+                      className={`font-semibold ${
+                        differenceWithCostsUSD > 0
+                          ? "text-red-500"
+                          : "text-green-500"
+                      }`}
+                    >
+                      Diferencia con Costos:{" "}
+                      {differenceWithCostsUSD > 0 ? "-" : "+"}$
+                      {Math.abs(differenceWithCostsUSD).toLocaleString(
+                        "es-AR",
+                        {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        }
+                      )}{" "}
+                      USD ({differenceWithCostsUSD > 0 ? "-" : "+"}
+                      {Math.abs(differenceWithCostsPercentage)}%)
                     </p>
                   </div>
                 </div>
@@ -1592,6 +1738,16 @@ export default function Quotation({ menuOpen }: QuotationProps) {
                     </span>
                   </div>
                 </div>
+              </div>
+            )}
+            {/* --- COSTOS --- */}
+            {usdPerKgNum > 0 && mediaResWeightNum > 0 && selectedBusiness && (
+              <div className="col-span-2">
+                <CostsManager
+                  cutsForQuotation={cutsForCosts}
+                  value={costsByCut}
+                  onChange={setCostsByCut}
+                />
               </div>
             )}
           </div>
