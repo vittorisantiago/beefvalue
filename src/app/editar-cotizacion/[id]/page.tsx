@@ -7,6 +7,16 @@ import CutItem from "../../components/CutItem";
 import BusinessModal from "../../components/BusinessModal";
 import { macros } from "@/lib/cuts";
 import { useRouter, useParams } from "next/navigation";
+import CostsManager from "../../components/CostsManager";
+
+// Tipo para fila de costo (igual que en Quotation.tsx)
+type CostRow = {
+  cutId: string;
+  costItemId: string;
+  currency: "ARS" | "USD" | "ARS + IVA";
+  prices: { ARS: number; "ARS + IVA": number; USD: number };
+  notes: string;
+};
 
 // Interfaz para los datos de quotation_cuts
 interface QuotationCut {
@@ -44,6 +54,8 @@ interface QuotationProps {
 export default function EditarCotizacion({ menuOpen }: QuotationProps) {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  // Estado para los costos por corte
+  const [costsByCut, setCostsByCut] = useState<CostRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [dollarRate, setDollarRate] = useState<number | null>(null);
   const [lastUpdate] = useState("Cargando...");
@@ -61,7 +73,12 @@ export default function EditarCotizacion({ menuOpen }: QuotationProps) {
       }
     >
   >({});
-  const [selectedCutImage, setSelectedCutImage] = useState<string | null>(null);
+
+  // Cortes para CostsManager (solo los que están en la cotización actual)
+  const cutsForCosts = Object.entries(cuts).map(([name, cut]) => ({
+    id: cut.id,
+    name,
+  }));
   const [selectedCutName, setSelectedCutName] = useState<string | null>(null);
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [selectedBusiness, setSelectedBusiness] = useState<string | null>(null);
@@ -195,6 +212,46 @@ export default function EditarCotizacion({ menuOpen }: QuotationProps) {
         };
       });
       setCuts(cutsData);
+
+      // Cargar costos por corte
+      const { data: costsData, error: costsError } = await supabase
+        .from("quotation_cut_costs")
+        .select(
+          `cut_id, cost_item_id, currency, price_ars, price_ars_iva, price_usd, notes`
+        )
+        .eq("quotation_id", id);
+      if (costsError) {
+        console.error("Error fetching quotation_cut_costs:", costsError);
+        setCostsByCut([]);
+      } else if (costsData) {
+        // costsData es (Supabase) Array<{ cut_id: string, cost_item_id: string, currency: string, price_ars: number, price_ars_iva: number, price_usd: number, notes?: string }>
+        const loadedCosts: CostRow[] = (
+          costsData as {
+            cut_id: string;
+            cost_item_id: string;
+            currency: string;
+            price_ars: number;
+            price_ars_iva: number;
+            price_usd: number;
+            notes?: string;
+          }[]
+        ).map((row) => ({
+          cutId: row.cut_id,
+          costItemId: row.cost_item_id,
+          currency: (row.currency === "ARS" ||
+          row.currency === "USD" ||
+          row.currency === "ARS + IVA"
+            ? row.currency
+            : "ARS") as "ARS" | "USD" | "ARS + IVA",
+          prices: {
+            ARS: row.price_ars,
+            "ARS + IVA": row.price_ars_iva,
+            USD: row.price_usd,
+          },
+          notes: row.notes || "",
+        }));
+        setCostsByCut(loadedCosts);
+      }
     };
 
     const fetchBusinesses = async () => {
@@ -299,7 +356,6 @@ export default function EditarCotizacion({ menuOpen }: QuotationProps) {
   };
 
   const handleCutSelect = (cut: string) => {
-    setSelectedCutImage(imageMap[cut] || null);
     setSelectedCutName(cut);
   };
 
@@ -451,6 +507,32 @@ export default function EditarCotizacion({ menuOpen }: QuotationProps) {
       if (cutsError)
         throw new Error(`Error updating quotation cuts: ${cutsError.message}`);
 
+      // --- COSTOS ---
+      await supabase
+        .from("quotation_cut_costs")
+        .delete()
+        .eq("quotation_id", id);
+
+      if (costsByCut.length > 0) {
+        const costRows = costsByCut.map((r: CostRow) => ({
+          quotation_id: id,
+          cut_id: r.cutId,
+          cost_item_id: r.costItemId,
+          currency: r.currency,
+          price_ars: r.prices.ARS,
+          price_ars_iva: r.prices["ARS + IVA"],
+          price_usd: r.prices.USD,
+          notes: r.notes,
+        }));
+        const { error: costsError } = await supabase
+          .from("quotation_cut_costs")
+          .insert(costRows);
+        if (costsError)
+          throw new Error(
+            `Error updating quotation costs: ${costsError.message}`
+          );
+      }
+
       setShowSuccessPopup(true);
     } catch (error) {
       console.error(error);
@@ -558,6 +640,35 @@ export default function EditarCotizacion({ menuOpen }: QuotationProps) {
     totalInitialUSDNum === 0
       ? 0
       : Number(((differenceUSD / totalInitialUSDNum) * 100).toFixed(2));
+
+  // Calcular el total de costos en USD (igual que en Quotation.tsx)
+  const calculateTotalCostsUSD = () => {
+    if (!dollarRate) return 0;
+    let total = 0;
+    costsByCut.forEach((row) => {
+      const price = row.prices[row.currency];
+      if (price > 0) {
+        let usdValue = 0;
+        if (row.currency === "USD") {
+          usdValue = price;
+        } else if (row.currency === "ARS + IVA") {
+          usdValue = price / 1.105 / dollarRate;
+        } else if (row.currency === "ARS") {
+          usdValue = price / dollarRate;
+        }
+        total -= usdValue;
+      }
+    });
+    return total;
+  };
+  const totalCostsUSD = calculateTotalCostsUSD();
+  const differenceWithCostsUSD = differenceUSD - totalCostsUSD;
+  const differenceWithCostsPercentage =
+    totalInitialUSDNum === 0
+      ? 0
+      : Number(
+          ((differenceWithCostsUSD / totalInitialUSDNum) * 100).toFixed(2)
+        );
 
   return (
     <div className="flex flex-1 flex-col p-6 overflow-hidden">
@@ -965,9 +1076,9 @@ export default function EditarCotizacion({ menuOpen }: QuotationProps) {
                   {selectedCutName}
                 </p>
               )}
-              {selectedCutImage ? (
+              {selectedCutName && imageMap[selectedCutName] ? (
                 <Image
-                  src={selectedCutImage}
+                  src={imageMap[selectedCutName]}
                   alt="Corte seleccionado"
                   width={400}
                   height={300}
@@ -1104,7 +1215,7 @@ export default function EditarCotizacion({ menuOpen }: QuotationProps) {
                         differenceUSD > 0 ? "text-red-500" : "text-green-500"
                       }`}
                     >
-                      Diferencia: {differenceUSD > 0 ? "-" : "+"}$
+                      Diferencia sin costos: {differenceUSD > 0 ? "-" : "+"}$
                       {Math.abs(differenceUSD).toLocaleString("es-AR", {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,
@@ -1112,11 +1223,41 @@ export default function EditarCotizacion({ menuOpen }: QuotationProps) {
                       USD ({differenceUSD > 0 ? "-" : "+"}
                       {Math.abs(differencePercentage)}%)
                     </p>
+                    {/* Diferencia con costos */}
+                    <p
+                      className={`font-semibold ${
+                        differenceWithCostsUSD > 0
+                          ? "text-red-500"
+                          : "text-green-500"
+                      }`}
+                    >
+                      Diferencia con costos:{" "}
+                      {differenceWithCostsUSD > 0 ? "-" : "+"}$
+                      {Math.abs(differenceWithCostsUSD).toLocaleString(
+                        "es-AR",
+                        {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        }
+                      )}{" "}
+                      USD ({differenceWithCostsUSD > 0 ? "-" : "+"}
+                      {Math.abs(differenceWithCostsPercentage)}%)
+                    </p>
                   </div>
                 </div>
               </div>
             )}
           </div>
+          {/* CostsManager debajo del cuadro comparativo */}
+          {usdPerKg > 0 && mediaResWeight > 0 && selectedBusiness && (
+            <div className="col-span-2 mt-8">
+              <CostsManager
+                cutsForQuotation={cutsForCosts}
+                value={costsByCut}
+                onChange={setCostsByCut}
+              />
+            </div>
+          )}
         </main>
       </div>
     </div>
