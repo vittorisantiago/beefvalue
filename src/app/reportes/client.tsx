@@ -13,8 +13,9 @@ import {
   Tooltip,
   Legend,
   TooltipItem,
+  RadialLinearScale,
 } from "chart.js";
-import { Bar, Pie } from "react-chartjs-2";
+import { Bar, Pie, Radar, PolarArea } from "react-chartjs-2";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import CompararCotizacionesSection from "@/app/components/CompararCotizacionesSection";
@@ -27,8 +28,20 @@ ChartJS.register(
   ArcElement,
   Title,
   Tooltip,
-  Legend
+  Legend,
+  RadialLinearScale
 );
+
+// Tipos para costos
+type Moneda = "USD" | "ARS" | "ARS + IVA";
+interface CostRow {
+  quotation_id: string;
+  cost_item_id: string;
+  currency: Moneda;
+  price_ars: number;
+  price_ars_iva: number;
+  price_usd: number;
+}
 
 interface Quotation {
   id: string;
@@ -40,6 +53,7 @@ interface Quotation {
   total_cuts_usd: number;
   difference_usd: number;
   difference_percentage: number;
+  dollar_rate: number;
   business: { name: string };
 }
 
@@ -60,9 +74,9 @@ export default function Reportes() {
   const [error, setError] = useState<string | null>(null);
   const [permissions, setPermissions] = useState<string[]>([]);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
-  const [expandedChart, setExpandedChart] = useState<
-    null | "monthly" | "business" | "businessGain"
-  >(null);
+  const [expandedChart, setExpandedChart] = useState<null | string>(null);
+  const [costRows, setCostRows] = useState<CostRow[]>([]);
+  const [costItems, setCostItems] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const fetchData = async () => {
@@ -128,21 +142,9 @@ export default function Reportes() {
       const { data, error } = await supabase
         .from("quotations")
         .select(
-          `
-          id,
-          created_at,
-          business_id,
-          media_res_weight,
-          usd_per_kg,
-          total_initial_usd,
-          total_cuts_usd,
-          difference_usd,
-          difference_percentage,
-          business: business_id (name)
-        `
+          `id, created_at, business_id, media_res_weight, usd_per_kg, total_initial_usd, total_cuts_usd, difference_usd, difference_percentage, dollar_rate, business: business_id (name)`
         )
-        .eq("user_id", userId); // Añadido filtro por user_id
-
+        .eq("user_id", userId);
       if (error) {
         setError(error.message);
       } else {
@@ -160,6 +162,7 @@ export default function Reportes() {
             total_cuts_usd: item.total_cuts_usd,
             difference_usd: item.difference_usd,
             difference_percentage: item.difference_percentage,
+            dollar_rate: item.dollar_rate || 1,
             business:
               businessObj && businessObj.name
                 ? { name: businessObj.name }
@@ -167,6 +170,26 @@ export default function Reportes() {
           };
         });
         setQuotations(mappedQuotations);
+        // COSTOS: obtener todos los costos de las cotizaciones
+        const ids = mappedQuotations.map((q) => q.id);
+        if (ids.length) {
+          const { data: costsData } = await supabase
+            .from("quotation_cut_costs")
+            .select(
+              "quotation_id, cost_item_id, currency, price_ars, price_ars_iva, price_usd"
+            )
+            .in("quotation_id", ids);
+          setCostRows(costsData || []);
+        }
+        // COST ITEMS: obtener nombres
+        const { data: itemsData } = await supabase
+          .from("cost_items")
+          .select("id, name");
+        const itemsMap: Record<string, string> = {};
+        (itemsData || []).forEach((item) => {
+          itemsMap[item.id] = item.name;
+        });
+        setCostItems(itemsMap);
       }
       setLoading(false);
     };
@@ -174,7 +197,29 @@ export default function Reportes() {
     fetchData();
   }, []);
 
-  // Procesar datos (mismo código que antes)
+  // === Calcular diferencia con costos por cotización ===
+  function getCostosUSDByQuotation(): Record<string, number> {
+    const totals: Record<string, number> = {};
+    quotations.forEach((q) => {
+      totals[q.id] = 0;
+    });
+    costRows.forEach((row) => {
+      const q = quotations.find((qq) => qq.id === row.quotation_id);
+      if (!q) return;
+      const rate = q.dollar_rate || 1;
+      let usd = 0;
+      if (row.currency === "USD") usd = row.price_usd || 0;
+      else if (row.currency === "ARS + IVA")
+        usd = (row.price_ars_iva || 0) / 1.105 / rate;
+      else if (row.currency === "ARS") usd = (row.price_ars || 0) / rate;
+      totals[row.quotation_id] = (totals[row.quotation_id] || 0) + usd;
+    });
+    return totals;
+  }
+  const costosUSDByQuotation = getCostosUSDByQuotation();
+
+  // === Procesar datos para gráficos y KPIs ===
+  // Cotizaciones por mes
   const processMonthlyData = (): MonthlyData[] => {
     const monthlyMap: Record<string, number> = {};
     quotations.forEach((q) => {
@@ -188,7 +233,7 @@ export default function Reportes() {
       .map(([month, count]) => ({ month, count }))
       .sort((a, b) => a.month.localeCompare(b.month));
   };
-
+  // Distribución por negocio (con costos)
   const processBusinessData = (): BusinessData[] => {
     const businessMap: Record<string, { totalGain: number; count: number }> =
       {};
@@ -197,7 +242,9 @@ export default function Reportes() {
       if (!businessMap[businessName]) {
         businessMap[businessName] = { totalGain: 0, count: 0 };
       }
-      businessMap[businessName].totalGain += Math.abs(q.difference_usd);
+      const costos = costosUSDByQuotation[q.id] || 0;
+      const difFinal = (q.difference_usd || 0) - costos;
+      businessMap[businessName].totalGain += Math.abs(difFinal);
       businessMap[businessName].count += 1;
     });
     return Object.entries(businessMap)
@@ -208,19 +255,21 @@ export default function Reportes() {
       }))
       .sort((a, b) => b.totalGain - a.totalGain);
   };
-
-  // Gráfico de Top 5 Negocios por Ganancia
-  const negativeQuotations = quotations.filter((q) => q.difference_usd < 0);
+  // Top 5 negocios por ganancia (con costos)
   const processBusinessDataNegative = (): BusinessData[] => {
     const businessMap: Record<string, { totalGain: number; count: number }> =
       {};
-    negativeQuotations.forEach((q) => {
+    quotations.forEach((q) => {
       const businessName = q.business?.name || "Sin Negocio";
-      if (!businessMap[businessName]) {
-        businessMap[businessName] = { totalGain: 0, count: 0 };
+      const costos = costosUSDByQuotation[q.id] || 0;
+      const difFinal = (q.difference_usd || 0) - costos;
+      if (difFinal < 0) {
+        if (!businessMap[businessName]) {
+          businessMap[businessName] = { totalGain: 0, count: 0 };
+        }
+        businessMap[businessName].totalGain += Math.abs(difFinal);
+        businessMap[businessName].count += 1;
       }
-      businessMap[businessName].totalGain += Math.abs(q.difference_usd);
-      businessMap[businessName].count += 1;
     });
     return Object.entries(businessMap)
       .map(([name, data]) => ({
@@ -231,10 +280,53 @@ export default function Reportes() {
       .sort((a, b) => b.totalGain - a.totalGain)
       .slice(0, 5);
   };
-  const businessDataNegative = processBusinessDataNegative();
-
   const monthlyData = processMonthlyData();
   const businessData = processBusinessData();
+  const businessDataNegative = processBusinessDataNegative();
+
+  // === Top 10 Costos ===
+  function getTop10Costos() {
+    const costMap: Record<string, number> = {};
+    costRows.forEach((row) => {
+      const q = quotations.find((qq) => qq.id === row.quotation_id);
+      if (!q) return;
+      const rate = q.dollar_rate || 1;
+      let usd = 0;
+      if (row.currency === "USD") usd = row.price_usd || 0;
+      else if (row.currency === "ARS + IVA")
+        usd = (row.price_ars_iva || 0) / 1.105 / rate;
+      else if (row.currency === "ARS") usd = (row.price_ars || 0) / rate;
+      costMap[row.cost_item_id] = (costMap[row.cost_item_id] || 0) + usd;
+    });
+    // Convertir a array y ordenar
+    const arr = Object.entries(costMap).map(([id, total]) => ({
+      id,
+      name: costItems[id] || id,
+      total,
+    }));
+    return arr.sort((a, b) => b.total - a.total).slice(0, 10);
+  }
+  const top10Costos = getTop10Costos();
+
+  // === Radar de proporción de costos ===
+  function getRadarCostosData() {
+    const total = top10Costos.reduce((acc, c) => acc + c.total, 0);
+    return {
+      labels: top10Costos.map((c) => c.name),
+      datasets: [
+        {
+          label: "Proporción de Costos (%)",
+          data: top10Costos.map((c) =>
+            total > 0 ? (c.total / total) * 100 : 0
+          ),
+          backgroundColor: "rgba(34,197,94,0.2)",
+          borderColor: "#22c55e",
+          borderWidth: 2,
+        },
+      ],
+    };
+  }
+  const radarCostosData = getRadarCostosData();
 
   // Colores y datos para gráficos (mismo código que antes)
   const softColors = [
@@ -244,6 +336,10 @@ export default function Reportes() {
     "#A3E635",
     "#C4B5FD",
     "#FCD34D",
+    "#22c55e",
+    "#2563eb",
+    "#eab308",
+    "#a21caf",
   ];
 
   const monthlyChartData = {
@@ -290,13 +386,44 @@ export default function Reportes() {
     labels: businessDataNegative.map((d) => d.name),
     datasets: [
       {
-        label: "Ganancia Total por Negocio (USD)",
+        label: "Ganancia Total por Negocio (USD, con costos)",
         data: businessDataNegative.map((d) => d.totalGain),
         backgroundColor: softColors.slice(0, businessDataNegative.length),
         borderColor: softColors.slice(0, businessDataNegative.length),
         borderWidth: 1,
       },
     ],
+  };
+  // Top 10 Costos - Polar Area
+  const top10CostosPolarChartData = {
+    labels: top10Costos.map((c) => c.name),
+    datasets: [
+      {
+        label: "Importe acumulado (USD)",
+        data: top10Costos.map((c) => c.total),
+        backgroundColor: softColors.slice(0, top10Costos.length),
+        borderColor: "#fff",
+        borderWidth: 2,
+      },
+    ],
+  };
+  const top10CostosPolarChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { position: "right" as const, labels: { color: "#E5E7EB" } },
+      tooltip: {
+        callbacks: {
+          label: function (context: TooltipItem<"polarArea">) {
+            const label = context.label || "";
+            const value = context.raw as number;
+            return `${label}: $${value.toLocaleString("es-AR", {
+              minimumFractionDigits: 2,
+            })}`;
+          },
+        },
+      },
+    },
   };
 
   const chartOptions = {
@@ -531,6 +658,32 @@ export default function Reportes() {
             )
             .join("\n"),
         },
+        {
+          selector: '[data-chart="top10CostosPolar"]',
+          title: "Top 10 Costos (Polar Area)",
+          description: "Los 10 costos más altos acumulados en USD.",
+          table: top10Costos
+            .map(
+              (c) =>
+                `${c.name}: $${c.total.toLocaleString("es-AR", {
+                  minimumFractionDigits: 2,
+                })}`
+            )
+            .join("\n"),
+        },
+        {
+          selector: '[data-chart="radarCostos"]',
+          title: "Radar de Proporción de Costos",
+          description:
+            "Proporción (%) de cada costo respecto al total de los 10 principales.",
+          table: top10Costos
+            .map((c) => {
+              const total = top10Costos.reduce((acc, cc) => acc + cc.total, 0);
+              const percent = total > 0 ? (c.total / total) * 100 : 0;
+              return `${c.name}: ${percent.toFixed(2)}%`;
+            })
+            .join("\n"),
+        },
       ];
       for (const section of chartSections) {
         const el = document.querySelector(section.selector) as HTMLElement;
@@ -727,6 +880,36 @@ export default function Reportes() {
           22,
           y
         );
+        y += 6;
+      });
+      y += 2;
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(22, 163, 74);
+      doc.text("Top 10 Costos (USD):", 18, y);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(60, 60, 60);
+      y += 6;
+      top10Costos.forEach((c) => {
+        doc.text(
+          `• ${c.name}: $${c.total.toLocaleString("es-AR", {
+            minimumFractionDigits: 2,
+          })}`,
+          22,
+          y
+        );
+        y += 6;
+      });
+      y += 2;
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(22, 163, 74);
+      doc.text("Radar de Proporción de Costos:", 18, y);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(60, 60, 60);
+      y += 6;
+      const totalRadar = top10Costos.reduce((acc, cc) => acc + cc.total, 0);
+      top10Costos.forEach((c) => {
+        const percent = totalRadar > 0 ? (c.total / totalRadar) * 100 : 0;
+        doc.text(`• ${c.name}: ${percent.toFixed(2)}%`, 22, y);
         y += 6;
       });
       doc.save(
@@ -939,7 +1122,6 @@ export default function Reportes() {
               <Bar data={monthlyChartData} options={monthlyChartOptions} />
             </div>
           </div>
-
           {/* Distribución por Negocio */}
           <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg relative group">
             <div className="flex justify-between items-center mb-4">
@@ -976,12 +1158,11 @@ export default function Reportes() {
               />
             </div>
           </div>
-
-          {/* Top 5 Negocios por Ganancia */}
+          {/* Top 5 Negocios por Ganancia (con costos) */}
           <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg relative group">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-semibold text-[var(--foreground)]">
-                Top 5 Negocios por Ganancia (USD)
+                Top 5 Negocios por Ganancia
               </h2>
               <button
                 onClick={() => setExpandedChart("businessGain")}
@@ -1010,6 +1191,88 @@ export default function Reportes() {
               <Bar
                 data={businessGainChartData}
                 options={businessGainChartOptions}
+              />
+            </div>
+          </div>
+          {/* Top 10 Costos - Polar Area */}
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg relative group">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold text-[var(--foreground)]">
+                Top 10 Costos (Polar Area)
+              </h2>
+              <button
+                onClick={() => setExpandedChart("top10CostosPolar")}
+                className="ml-2 p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+                title="Expandir gráfico"
+              >
+                <svg
+                  className="w-6 h-6 text-gray-500"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M4 8V6a2 2 0 012-2h2m8 0h2a2 2 0 012 2v2m0 8v2a2 2 0 01-2 2h-2m-8 0H6a2 2 0 01-2-2v-2"
+                  />
+                </svg>
+              </button>
+            </div>
+            <div
+              className={"transition-all duration-300 h-[400px]"}
+              data-chart="top10CostosPolar"
+            >
+              <PolarArea
+                data={top10CostosPolarChartData}
+                options={top10CostosPolarChartOptions}
+              />
+            </div>
+          </div>
+          {/* Radar de proporción de costos */}
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg relative group">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold text-[var(--foreground)]">
+                Radar de Proporción de Costos
+              </h2>
+              <button
+                onClick={() => setExpandedChart("radarCostos")}
+                className="ml-2 p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+                title="Expandir gráfico"
+              >
+                <svg
+                  className="w-6 h-6 text-gray-500"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M4 8V6a2 2 0 012-2h2m8 0h2a2 2 0 012 2v2m0 8v2a2 2 0 01-2 2h-2m-8 0H6a2 2 0 01-2-2v-2"
+                  />
+                </svg>
+              </button>
+            </div>
+            <div
+              className={"transition-all duration-300 h-[400px]"}
+              data-chart="radarCostos"
+            >
+              <Radar
+                data={radarCostosData}
+                options={{
+                  ...chartOptions,
+                  scales: {
+                    r: {
+                      angleLines: { color: "#fff2" },
+                      pointLabels: { color: "#fff" },
+                      grid: { color: "#fff2" },
+                      ticks: { display: false },
+                    },
+                  },
+                }}
               />
             </div>
           </div>
@@ -1058,6 +1321,36 @@ export default function Reportes() {
                     data={businessGainChartData}
                     options={{
                       ...businessGainChartOptions,
+                      maintainAspectRatio: false,
+                    }}
+                    height={undefined}
+                    width={undefined}
+                  />
+                )}
+                {expandedChart === "top10CostosPolar" && (
+                  <PolarArea
+                    data={top10CostosPolarChartData}
+                    options={{
+                      ...top10CostosPolarChartOptions,
+                      maintainAspectRatio: false,
+                    }}
+                    height={undefined}
+                    width={undefined}
+                  />
+                )}
+                {expandedChart === "radarCostos" && (
+                  <Radar
+                    data={radarCostosData}
+                    options={{
+                      ...chartOptions,
+                      scales: {
+                        r: {
+                          angleLines: { color: "#fff2" },
+                          pointLabels: { color: "#fff" },
+                          grid: { color: "#fff2" },
+                          ticks: { display: false },
+                        },
+                      },
                       maintainAspectRatio: false,
                     }}
                     height={undefined}

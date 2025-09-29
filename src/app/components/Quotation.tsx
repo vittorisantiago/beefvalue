@@ -771,8 +771,6 @@ export default function Quotation({ menuOpen }: QuotationProps) {
     }
   };
 
-  // ...existing code...
-
   // Refs para inputs de precio
   const priceInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
