@@ -21,6 +21,9 @@ interface Quotation {
   total_cuts_usd: number;
   difference_usd: number; // SIN costos
   difference_percentage: number; // SIN costos
+  total_cost_usd: number;
+  final_difference_usd: number;
+  final_difference_percentage: number;
 }
 
 interface QuotationCutPDF {
@@ -60,9 +63,7 @@ export default function HistorialClient() {
   const [searchTerm, setSearchTerm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [permissions, setPermissions] = useState<string[]>([]);
-  const [costTotalsUSD, setCostTotalsUSD] = useState<Record<string, number>>(
-    {}
-  ); // COSTOS: totales por quotation_id
+
   const router = useRouter();
   const itemsPerPage = 10;
 
@@ -136,7 +137,10 @@ export default function HistorialClient() {
           total_initial_usd,
           total_cuts_usd,
           difference_usd,
-          difference_percentage
+          difference_percentage,
+          total_cost_usd,
+          final_difference_usd,
+          final_difference_percentage
         `,
           { count: "exact" }
         )
@@ -167,45 +171,13 @@ export default function HistorialClient() {
           total_cuts_usd: item.total_cuts_usd,
           difference_usd: item.difference_usd,
           difference_percentage: item.difference_percentage,
+          total_cost_usd: item.total_cost_usd || 0,
+          final_difference_usd: item.final_difference_usd || 0,
+          final_difference_percentage: item.final_difference_percentage || 0,
         };
       });
       setQuotations(mapped);
       setTotalPages(Math.max(1, Math.ceil((count || 0) / itemsPerPage)));
-
-      // === COSTOS: una sola query para los ids de esta página
-      const ids = mapped.map((q) => q.id);
-      if (ids.length) {
-        const { data: costsPage, error: costsErr } = await supabase
-          .from("quotation_cut_costs")
-          .select("quotation_id, currency, price_ars, price_ars_iva, price_usd")
-          .in("quotation_id", ids);
-
-        if (!costsErr && costsPage) {
-          const totals: Record<string, number> = {};
-          for (const row of costsPage as {
-            quotation_id: string;
-            currency: Moneda;
-            price_ars: number;
-            price_ars_iva: number;
-            price_usd: number;
-          }[]) {
-            const rate =
-              mapped.find((q) => q.id === row.quotation_id)?.dollar_rate || 1;
-            const usd =
-              row.currency === "USD"
-                ? -(row.price_usd || 0)
-                : row.currency === "ARS + IVA"
-                ? -((row.price_ars_iva || 0) / 1.105 / rate)
-                : -((row.price_ars || 0) / rate);
-            totals[row.quotation_id] = (totals[row.quotation_id] || 0) + usd;
-          }
-          setCostTotalsUSD(totals);
-        } else {
-          setCostTotalsUSD({});
-        }
-      } else {
-        setCostTotalsUSD({});
-      }
 
       setLoading(false);
     };
@@ -335,20 +307,10 @@ export default function HistorialClient() {
         };
       }
     );
-    // El valor de costos siempre debe ser positivo y RESTAR
-    const totalCostsUSD = costs.reduce(
-      (acc, c) => acc - Math.abs(c.usdValue),
-      0
-    );
-    // Calcular diferencia final con costos: totalInicialUSD - totalCortesUSD - totalCostosUSD
-    const difFinalUSD =
-      (quotation.total_initial_usd || 0) -
-      (quotation.total_cuts_usd || 0) -
-      totalCostsUSD;
-    const difFinalPct =
-      (quotation.total_initial_usd || 0) > 0
-        ? (difFinalUSD / quotation.total_initial_usd) * 100
-        : 0;
+    // Usar valores almacenados para costos y diferencias finales
+    const totalCostsUSD = quotation.total_cost_usd;
+    const difFinalUSD = quotation.final_difference_usd;
+    const difFinalPct = quotation.final_difference_percentage;
     // Crear PDF
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -678,13 +640,6 @@ export default function HistorialClient() {
             </thead>
             <tbody>
               {filteredQuotations.map((q, i) => {
-                const costos = costTotalsUSD[q.id] || 0;
-                const difFinal = (q.difference_usd || 0) - costos;
-                const difFinalPct =
-                  (q.total_initial_usd || 0) > 0
-                    ? (difFinal / q.total_initial_usd) * 100
-                    : 0;
-
                 return (
                   <tr
                     key={q.id}
@@ -725,14 +680,22 @@ export default function HistorialClient() {
                     </td>
 
                     {/* COSTOS y DIF FINAL */}
-                    <td className="p-2">{fmt(costos)}</td>
+                    <td className="p-2">{fmt(q.total_cost_usd)}</td>
                     <td className="p-2">
-                      {difFinal > 0 ? "- " : difFinal < 0 ? "+" : ""}
-                      {fmt(Math.abs(difFinal))}
+                      {q.final_difference_usd > 0
+                        ? "- "
+                        : q.final_difference_usd < 0
+                        ? "+"
+                        : ""}
+                      {fmt(Math.abs(q.final_difference_usd))}
                     </td>
                     <td className="p-2">
-                      {difFinalPct > 0 ? "- " : difFinalPct < 0 ? "+" : ""}
-                      {fmt(Math.abs(difFinalPct))}%
+                      {q.final_difference_percentage > 0
+                        ? "- "
+                        : q.final_difference_percentage < 0
+                        ? "+"
+                        : ""}
+                      {fmt(Math.abs(q.final_difference_percentage))}%
                     </td>
 
                     <td className="p-2 flex gap-2">
