@@ -19,21 +19,30 @@ type CutLite = {
 };
 
 type Props = {
-  // Cortes visibles/operativos en la cotización actual
   cutsForQuotation: CutLite[];
-  // Estado controlado por el padre
   value: CostRow[];
   onChange: (rows: CostRow[]) => void;
+  costTotals: Record<string, { value: number | ""; currency: Currency }>;
+  useTotalCost: boolean;
+  onTotalsChange: (
+    totals: Record<string, { value: number | ""; currency: Currency }>
+  ) => void;
+  onUseTotalCostChange: (useTotal: boolean) => void;
 };
 
 export default function CostsManager({
   cutsForQuotation,
   value,
   onChange,
+  costTotals,
+  useTotalCost,
+  onTotalsChange,
+  onUseTotalCostChange,
 }: Props) {
   const [items, setItems] = useState<CostItem[]>([]);
   const [selectedCutIds, setSelectedCutIds] = useState<string[]>([]);
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+  // useTotalCost y costTotals ahora vienen del padre
 
   useEffect(() => {
     (async () => setItems(await fetchCostItems()))();
@@ -64,27 +73,29 @@ export default function CostsManager({
     );
   };
 
-  const addRows = () => {
-    if (selectedCutIds.length === 0 || selectedItemIds.length === 0) return;
-    const setKey = (r: CostRow) => `${r.cutId}-${r.costItemId}`;
-    const existing = new Set(value.map(setKey));
-
-    const newRows: CostRow[] = [];
-    selectedCutIds.forEach((cutId) => {
-      selectedItemIds.forEach((itemId) => {
-        const proto: CostRow = {
-          cutId,
-          costItemId: itemId,
-          currency: "USD",
-          prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
-          notes: "",
-        };
-        if (!existing.has(setKey(proto))) newRows.push(proto);
+  // Agregar selección actual al listado sin borrar lo anterior
+  const addSelectionToList = () => {
+    if (selectedItemIds.length === 0 || selectedCutIds.length === 0) return;
+    const existing = [...value];
+    const existingKeys = new Set(
+      existing.map((r) => `${r.cutId}::${r.costItemId}`)
+    );
+    const additions: CostRow[] = [];
+    selectedItemIds.forEach((itemId) => {
+      selectedCutIds.forEach((cutId) => {
+        const key = `${cutId}::${itemId}`;
+        if (!existingKeys.has(key)) {
+          additions.push({
+            costItemId: itemId,
+            cutId: cutId,
+            currency: "USD",
+            prices: { ARS: 0, "ARS + IVA": 0, USD: 0 },
+            notes: "",
+          });
+        }
       });
     });
-
-    if (newRows.length > 0) onChange([...value, ...newRows]);
-    // No vaciamos la selección para permitir sumar más fácilmente
+    if (additions.length > 0) onChange([...existing, ...additions]);
   };
 
   const updateRow = (idx: number, patch: Partial<CostRow>) => {
@@ -108,7 +119,17 @@ export default function CostsManager({
 
   const removeRow = (idx: number) => {
     const next = [...value];
+    const removed = next[idx];
     next.splice(idx, 1);
+    // Si ya no hay ningún corte con ese costItemId, eliminamos el costo total
+    const stillExists = next.some(
+      (row) => row.costItemId === removed.costItemId
+    );
+    if (!stillExists) {
+      const copy = { ...costTotals };
+      delete copy[removed.costItemId];
+      onTotalsChange(copy);
+    }
     onChange(next);
   };
 
@@ -144,11 +165,58 @@ export default function CostsManager({
     (c) => !excludedCuts.has(c.name)
   );
 
+  // Cortes sin costos asignados (para advertencia)
+  const cutsWithCosts = useMemo(
+    () => new Set(value.map((r) => r.cutId)),
+    [value]
+  );
+  const missingCostCuts = useMemo(
+    () => filteredCuts.filter((c) => !cutsWithCosts.has(c.id)),
+    [filteredCuts, cutsWithCosts]
+  );
+
   return (
     <div className="bg-[var(--background)] border-2 border-gray-300 dark:border-gray-600 rounded-xl shadow-lg p-6">
       <h2 className="text-3xl font-bold text-[var(--foreground)] mb-5">
         Costos
       </h2>
+      <div className="mb-4 flex items-center gap-3">
+        <input
+          type="checkbox"
+          checked={useTotalCost}
+          onChange={() => onUseTotalCostChange(!useTotalCost)}
+          id="useTotalCost"
+          className="w-5 h-5 accent-blue-500 cursor-pointer"
+        />
+        <label
+          htmlFor="useTotalCost"
+          className="text-lg font-semibold text-blue-800 dark:text-blue-200 cursor-pointer"
+        >
+          Cargar costo total y dividir automáticamente entre los cortes
+          seleccionados
+        </label>
+      </div>
+
+      {/* Advertencia sobre cortes sin costos */}
+      {missingCostCuts.length > 0 && (
+        <div className="mb-5 p-3 rounded bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-300 dark:border-yellow-600 text-yellow-800 dark:text-yellow-200">
+          <div className="font-semibold mb-1">
+            Faltan costos en {missingCostCuts.length}{" "}
+            {missingCostCuts.length === 1 ? "corte" : "cortes"}
+          </div>
+          <div className="text-sm flex flex-wrap gap-2">
+            {missingCostCuts.map((c) => (
+              <span
+                key={c.id}
+                className="px-2 py-1 rounded bg-yellow-100 dark:bg-yellow-800"
+              >
+                {c.name}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      {/* Mensaje de ayuda y selección múltiple de cortes */}
       <div className="flex items-center gap-3 mb-5">
         <svg
           className="w-6 h-6 text-yellow-400"
@@ -188,6 +256,36 @@ export default function CostsManager({
             onClick={() => setSelectedCutIds([])}
           >
             Limpiar selección
+          </button>
+          <button
+            type="button"
+            className="px-3 py-1 text-sm rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600 transition-all cursor-pointer"
+            onClick={() => {
+              const cutsWithCosts = new Set(value.map((r) => r.cutId));
+              const missing = filteredCuts
+                .filter((c) => !cutsWithCosts.has(c.id))
+                .map((c) => c.id);
+              setSelectedCutIds(missing);
+            }}
+          >
+            Seleccionar cortes sin costos
+          </button>
+          <button
+            type="button"
+            className="px-3 py-1 text-sm rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600 transition-all cursor-pointer"
+            onClick={() => {
+              setSelectedCutIds([]);
+              setSelectedItemIds([]);
+            }}
+          >
+            Nueva selección
+          </button>
+          <button
+            type="button"
+            className="px-3 py-1 text-sm rounded bg-blue-600 text-white border border-blue-700 hover:bg-blue-700 transition-all cursor-pointer"
+            onClick={addSelectionToList}
+          >
+            Agregar al listado
           </button>
         </div>
         <div className="flex flex-wrap gap-4">
@@ -240,12 +338,69 @@ export default function CostsManager({
         </div>
       </div>
 
-      <button
-        onClick={addRows}
-        className="px-5 py-3 bg-[var(--primary)] text-white rounded-md hover:bg-[var(--primary-hover)] transition-all cursor-pointer mb-8 text-lg font-semibold"
-      >
-        Agregar combinaciones seleccionadas
-      </button>
+      {/* Inputs de costos totales, basados en los ítems presentes en la tabla */}
+      {useTotalCost && value.length > 0 && (
+        <div className="mb-6">
+          <h3 className="text-xl font-semibold text-blue-800 dark:text-blue-200 mb-4">
+            Costos totales por tipo (ingrese el importe total para cada costo)
+          </h3>
+          <div className="flex flex-wrap gap-6 items-end">
+            {[...new Set(value.map((r) => r.costItemId))].map((itemId) => (
+              <div key={itemId} className="flex items-center gap-3">
+                <span className="text-base font-medium text-blue-700 dark:text-blue-200">
+                  {itemById[itemId]?.name || "Costo"}:
+                </span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={(() => {
+                    const v = costTotals[itemId]?.value;
+                    if (v === undefined || v === "") return "";
+                    const num = typeof v === "number" ? v : Number(v);
+                    if (!isFinite(num)) return "";
+                    const rounded = Math.round(num * 1e6) / 1e6; // limitar precisión
+                    if (Math.abs(rounded - Math.round(rounded)) < 1e-6) {
+                      return String(Math.round(rounded));
+                    }
+                    // trim trailing zeros
+                    return String(rounded).replace(/(\.\d*?[1-9])0+$/, "$1");
+                  })()}
+                  onChange={(e) => {
+                    const val =
+                      e.target.value === "" ? "" : Number(e.target.value);
+                    onTotalsChange({
+                      ...costTotals,
+                      [itemId]: {
+                        value: val,
+                        currency: costTotals[itemId]?.currency || "USD",
+                      },
+                    });
+                  }}
+                  className="px-3 py-2 bg-[var(--background)] border border-gray-300 dark:border-gray-600 rounded-md w-48 text-lg font-bold text-blue-900 dark:text-blue-100"
+                />
+                <select
+                  value={costTotals[itemId]?.currency || "USD"}
+                  onChange={(e) => {
+                    onTotalsChange({
+                      ...costTotals,
+                      [itemId]: {
+                        value: costTotals[itemId]?.value ?? "",
+                        currency: e.target.value as Currency,
+                      },
+                    });
+                  }}
+                  className="px-3 py-2 bg-[var(--background)] border border-gray-300 dark:border-gray-600 rounded-md text-lg"
+                >
+                  <option value="USD">USD</option>
+                  <option value="ARS">ARS</option>
+                  <option value="ARS + IVA">ARS + IVA</option>
+                </select>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Grilla de costos seleccionados */}
       {value.length === 0 ? (
@@ -268,6 +423,21 @@ export default function CostsManager({
             <tbody>
               {value.map((row, idx) => {
                 const item = itemById[row.costItemId];
+                let priceValue = row.prices[row.currency];
+                let currencyValue = row.currency;
+                if (useTotalCost && costTotals[row.costItemId]) {
+                  // Solo dividir entre los cortes que tienen ese costo
+                  const sameRows = value.filter(
+                    (r) => r.costItemId === row.costItemId
+                  );
+                  const total = costTotals[row.costItemId].value;
+                  const currency = costTotals[row.costItemId].currency;
+                  priceValue =
+                    sameRows.length > 0 && total !== ""
+                      ? Number((Number(total) / sameRows.length).toFixed(2))
+                      : 0;
+                  currencyValue = currency;
+                }
                 return (
                   <tr
                     key={`${row.cutId}-${row.costItemId}`}
@@ -277,13 +447,14 @@ export default function CostsManager({
                     <td className="p-3">{item?.name || "Costo"}</td>
                     <td className="p-3">
                       <select
-                        value={row.currency}
+                        value={currencyValue}
                         onChange={(e) =>
                           updateRow(idx, {
                             currency: e.target.value as Currency,
                           })
                         }
                         className="px-3 py-2 bg-[var(--background)] border border-gray-300 dark:border-gray-600 rounded-md text-lg"
+                        disabled={useTotalCost}
                       >
                         <option value="USD">USD</option>
                         <option value="ARS">ARS</option>
@@ -299,21 +470,17 @@ export default function CostsManager({
                           min="0"
                           step="0.01"
                           value={
-                            row.prices[row.currency] === 0 ||
-                            row.prices[row.currency] === undefined
+                            priceValue === 0 || priceValue === undefined
                               ? ""
-                              : row.prices[row.currency]
+                              : priceValue
                           }
                           onFocus={(e) => {
-                            if (
-                              row.prices[row.currency] === 0 ||
-                              row.prices[row.currency] === undefined
-                            ) {
+                            if (priceValue === 0 || priceValue === undefined) {
                               e.target.value = "";
                             }
                           }}
                           onChange={(e) => {
-                            // Allow empty string (user deletes all)
+                            if (useTotalCost) return;
                             const val = e.target.value;
                             if (val === "") {
                               const prices = {
@@ -322,7 +489,6 @@ export default function CostsManager({
                               };
                               updateRow(idx, { prices });
                             } else {
-                              // Only allow valid numbers
                               const num = Number(val.replace(/,/g, "."));
                               if (!isNaN(num)) {
                                 const prices = {
@@ -334,10 +500,10 @@ export default function CostsManager({
                             }
                           }}
                           className="px-3 py-2 bg-[var(--background)] border border-gray-300 dark:border-gray-600 rounded-md w-32 text-lg"
+                          disabled={useTotalCost}
                         />
                       </div>
                     </td>
-                    {/* Notas cell removed */}
                     <td className="p-3">
                       <button
                         onClick={() => removeRow(idx)}
