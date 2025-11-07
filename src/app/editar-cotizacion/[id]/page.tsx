@@ -56,6 +56,13 @@ export default function EditarCotizacion({ menuOpen }: QuotationProps) {
   const [userId, setUserId] = useState<string | null>(null);
   // Estado para los costos por corte
   const [costsByCut, setCostsByCut] = useState<CostRow[]>([]);
+  const [costTotals, setCostTotals] = useState<
+    Record<
+      string,
+      { value: number | ""; currency: "ARS" | "USD" | "ARS + IVA" }
+    >
+  >({});
+  const [useTotalCost, setUseTotalCost] = useState<boolean>(false);
   const [loading, setLoading] = useState(true);
   const [dollarRate, setDollarRate] = useState<number | null>(null);
   const [lastUpdate] = useState("Cargando...");
@@ -157,6 +164,9 @@ export default function EditarCotizacion({ menuOpen }: QuotationProps) {
           media_res_weight,
           usd_per_kg,
           dollar_rate,
+          total_cost_usd,
+          final_difference_usd,
+          final_difference_percentage,
           quotation_cuts (
             cut_id,
             price_ars,
@@ -217,40 +227,78 @@ export default function EditarCotizacion({ menuOpen }: QuotationProps) {
       const { data: costsData, error: costsError } = await supabase
         .from("quotation_cut_costs")
         .select(
-          `cut_id, cost_item_id, currency, price_ars, price_ars_iva, price_usd, notes`
+          `cut_id, cost_item_id, currency, price_ars, price_ars_iva, price_usd, notes,
+           cost_items ( id, name )`
         )
         .eq("quotation_id", id);
+
       if (costsError) {
         console.error("Error fetching quotation_cut_costs:", costsError);
         setCostsByCut([]);
       } else if (costsData) {
-        // costsData es (Supabase) Array<{ cut_id: string, cost_item_id: string, currency: string, price_ars: number, price_ars_iva: number, price_usd: number, notes?: string }>
-        const loadedCosts: CostRow[] = (
-          costsData as {
-            cut_id: string;
-            cost_item_id: string;
-            currency: string;
-            price_ars: number;
-            price_ars_iva: number;
-            price_usd: number;
-            notes?: string;
-          }[]
-        ).map((row) => ({
-          cutId: row.cut_id,
-          costItemId: row.cost_item_id,
-          currency: (row.currency === "ARS" ||
-          row.currency === "USD" ||
-          row.currency === "ARS + IVA"
-            ? row.currency
-            : "ARS") as "ARS" | "USD" | "ARS + IVA",
-          prices: {
-            ARS: row.price_ars,
-            "ARS + IVA": row.price_ars_iva,
-            USD: row.price_usd,
-          },
-          notes: row.notes || "",
-        }));
-        setCostsByCut(loadedCosts);
+        if (costsData.length === 0) {
+          // Si no hay costos, establecer modo de costo total
+          setUseTotalCost(true);
+        } else {
+          // Construir asociaciones desde DB
+          const loadedCosts: CostRow[] = costsData.map((row) => ({
+            cutId: row.cut_id,
+            costItemId: row.cost_item_id,
+            currency: (row.currency === "ARS" ||
+            row.currency === "USD" ||
+            row.currency === "ARS + IVA"
+              ? row.currency
+              : "ARS") as "ARS" | "USD" | "ARS + IVA",
+            prices: {
+              ARS: row.price_ars,
+              "ARS + IVA": row.price_ars_iva,
+              USD: row.price_usd,
+            },
+            notes: row.notes || "",
+          }));
+
+          // Detectar si todos los costos fueron distribuidos automáticamente
+          const isDistributed = costsData.every(
+            (row) => row.notes === "Costo distribuido automáticamente"
+          );
+
+          if (isDistributed) {
+            setUseTotalCost(true);
+            // Agrupar totales por cost_item_id sumando según la moneda almacenada
+            const grouped: Record<
+              string,
+              { value: number; currency: "ARS" | "USD" | "ARS + IVA" }
+            > = {};
+            costsData.forEach((row) => {
+              if (!grouped[row.cost_item_id]) {
+                grouped[row.cost_item_id] = {
+                  value: 0,
+                  currency: (row.currency === "ARS" ||
+                  row.currency === "USD" ||
+                  row.currency === "ARS + IVA"
+                    ? row.currency
+                    : "USD") as "ARS" | "USD" | "ARS + IVA",
+                };
+              }
+              if (row.currency === "USD")
+                grouped[row.cost_item_id].value += row.price_usd;
+              else if (row.currency === "ARS + IVA")
+                grouped[row.cost_item_id].value += row.price_ars_iva;
+              else grouped[row.cost_item_id].value += row.price_ars;
+            });
+            // Redondear a 2 decimales y convertir a número para evitar artefactos tipo 143.00000000000009
+            Object.keys(grouped).forEach((k) => {
+              grouped[k].value = Number(grouped[k].value.toFixed(2));
+            });
+            setCostTotals(grouped);
+            // Mantener las asociaciones en la grilla (precios serán ignorados en modo total)
+            setCostsByCut(loadedCosts);
+          } else {
+            setUseTotalCost(false);
+            setCostTotals({});
+            setCostsByCut(loadedCosts);
+          }
+        }
       }
     };
 
@@ -454,6 +502,45 @@ export default function EditarCotizacion({ menuOpen }: QuotationProps) {
     return missing.length === 0;
   }, [cuts, getDisplayCuts]);
 
+  const calculateTotalCostsUSD = () => {
+    if (!dollarRate) return 0;
+    let total = 0;
+
+    if (useTotalCost) {
+      // Si está usando costos totales, sumar directamente los valores de costTotals
+      Object.values(costTotals).forEach(({ value, currency }) => {
+        if (value !== "") {
+          const numValue = Number(value);
+          if (currency === "USD") {
+            total += numValue;
+          } else if (currency === "ARS + IVA") {
+            total += numValue / 1.105 / dollarRate;
+          } else if (currency === "ARS") {
+            total += numValue / dollarRate;
+          }
+        }
+      });
+    } else {
+      // Si usa costos individuales, sumar desde costsByCut
+      costsByCut.forEach((row) => {
+        const price = row.prices[row.currency];
+        if (price > 0) {
+          let usdValue = 0;
+          if (row.currency === "USD") {
+            usdValue = price;
+          } else if (row.currency === "ARS + IVA") {
+            usdValue = price / 1.105 / dollarRate;
+          } else if (row.currency === "ARS") {
+            usdValue = price / dollarRate;
+          }
+          total += usdValue;
+        }
+      });
+    }
+
+    return total;
+  };
+
   const handleUpdateQuotation = async () => {
     if (!validatePrices()) {
       setShowMissingPricesPopup(true);
@@ -472,6 +559,16 @@ export default function EditarCotizacion({ menuOpen }: QuotationProps) {
           ? 0
           : Number(((differenceUSD / totalInitialUSDNum) * 100).toFixed(2));
 
+      // Calcular valores finales con costos
+      const totalCostsUSD = calculateTotalCostsUSD();
+      const differenceWithCostsUSD = differenceUSD + totalCostsUSD;
+      const differenceWithCostsPercentage =
+        totalInitialUSDNum === 0
+          ? 0
+          : Number(
+              ((differenceWithCostsUSD / totalInitialUSDNum) * 100).toFixed(2)
+            );
+
       const { error: updateError } = await supabase
         .from("quotations")
         .update({
@@ -482,14 +579,120 @@ export default function EditarCotizacion({ menuOpen }: QuotationProps) {
           total_cuts_usd: totalCutsUSD,
           difference_usd: differenceUSD,
           difference_percentage: differencePercentage,
+          total_cost_usd: totalCostsUSD,
+          final_difference_usd: differenceWithCostsUSD,
+          final_difference_percentage: differenceWithCostsPercentage,
         })
         .eq("id", id);
 
       if (updateError)
         throw new Error(`Error updating quotation: ${updateError.message}`);
 
+      // Eliminar los costos existentes
+      await supabase
+        .from("quotation_cut_costs")
+        .delete()
+        .eq("quotation_id", id);
+
+      // Guardar los nuevos costos según el modo (total o individual)
+      if (useTotalCost) {
+        const displayCuts = getDisplayCuts();
+
+        const costRows: {
+          quotation_id: string;
+          cut_id: string;
+          cost_item_id: string;
+          currency: "USD" | "ARS" | "ARS + IVA";
+          price_ars: number;
+          price_ars_iva: number;
+          price_usd: number;
+          notes: string;
+        }[] = [];
+        // Para cada cost_item_id en costTotals, distribuir sólo entre cortes que lo tengan asociado en la grilla (o todos si no hay asociaciones previas)
+        const associationsByCost: Record<string, Set<string>> = {};
+        costsByCut.forEach((r) => {
+          if (!associationsByCost[r.costItemId])
+            associationsByCost[r.costItemId] = new Set();
+          associationsByCost[r.costItemId].add(r.cutId);
+        });
+
+        const excludedFallback = new Set<string>([
+          "Manipuleo de ral",
+          "Frío",
+          "Hueso de rueda",
+          "Grasa de parrillero",
+          "Manipuleo de rueda",
+          "Manipuleo de delantero",
+          "Grasa de delantero",
+          "Hueso de delantero",
+          "Hueso de ral",
+          "Grasa de ral",
+          "Grasa de rueda",
+          "Manipuleo de parrillero",
+        ]);
+        Object.entries(costTotals).forEach(([costItemId, data]) => {
+          if (data.value === "") return;
+          const associatedCuts = associationsByCost[costItemId]
+            ? displayCuts.filter((c) =>
+                associationsByCost[costItemId].has(cuts[c].id)
+              )
+            : displayCuts.filter((c) => !excludedFallback.has(c)); // fallback excluye cortes especiales
+          const assocTotalPerc = associatedCuts.reduce(
+            (sum, cut) => sum + cuts[cut].percentage,
+            0
+          );
+          associatedCuts.forEach((cutName) => {
+            const proportion = cuts[cutName].percentage / assocTotalPerc;
+            const distributedValue = Number(data.value) * proportion;
+            const currency = data.currency;
+            costRows.push({
+              quotation_id: String(id),
+              cut_id: cuts[cutName].id,
+              cost_item_id: costItemId,
+              currency,
+              price_ars: currency === "ARS" ? distributedValue : 0,
+              price_ars_iva: currency === "ARS + IVA" ? distributedValue : 0,
+              price_usd: currency === "USD" ? distributedValue : 0,
+              notes: "Costo distribuido automáticamente",
+            });
+          });
+        });
+
+        if (costRows.length > 0) {
+          const { error: costsError } = await supabase
+            .from("quotation_cut_costs")
+            .insert(costRows);
+          if (costsError)
+            throw new Error(
+              `Error updating quotation costs: ${costsError.message}`
+            );
+        }
+      } else if (costsByCut.length > 0) {
+        // Si usa costos individuales, guardarlos directamente
+        const costRows = costsByCut.map((r) => ({
+          quotation_id: id,
+          cut_id: r.cutId,
+          cost_item_id: r.costItemId,
+          currency: r.currency,
+          price_ars: r.prices.ARS,
+          price_ars_iva: r.prices["ARS + IVA"],
+          price_usd: r.prices.USD,
+          notes: r.notes,
+        }));
+
+        const { error: costsError } = await supabase
+          .from("quotation_cut_costs")
+          .insert(costRows);
+        if (costsError)
+          throw new Error(
+            `Error updating quotation costs: ${costsError.message}`
+          );
+      }
+
+      // Eliminar los cortes existentes
       await supabase.from("quotation_cuts").delete().eq("quotation_id", id);
 
+      // Guardar los nuevos cortes
       const quotationCuts = getDisplayCuts().map((cut) => ({
         quotation_id: id,
         cut_id: cuts[cut].id,
@@ -506,33 +709,6 @@ export default function EditarCotizacion({ menuOpen }: QuotationProps) {
 
       if (cutsError)
         throw new Error(`Error updating quotation cuts: ${cutsError.message}`);
-
-      // --- COSTOS ---
-      await supabase
-        .from("quotation_cut_costs")
-        .delete()
-        .eq("quotation_id", id);
-
-      if (costsByCut.length > 0) {
-        const costRows = costsByCut.map((r: CostRow) => ({
-          quotation_id: id,
-          cut_id: r.cutId,
-          cost_item_id: r.costItemId,
-          currency: r.currency,
-          price_ars: r.prices.ARS,
-          price_ars_iva: r.prices["ARS + IVA"],
-          price_usd: r.prices.USD,
-          notes: r.notes,
-        }));
-        const { error: costsError } = await supabase
-          .from("quotation_cut_costs")
-          .insert(costRows);
-        if (costsError)
-          throw new Error(
-            `Error updating quotation costs: ${costsError.message}`
-          );
-      }
-
       setShowSuccessPopup(true);
     } catch (error) {
       console.error(error);
@@ -641,34 +817,25 @@ export default function EditarCotizacion({ menuOpen }: QuotationProps) {
       ? 0
       : Number(((differenceUSD / totalInitialUSDNum) * 100).toFixed(2));
 
-  // Calcular el total de costos en USD (igual que en Quotation.tsx)
-  const calculateTotalCostsUSD = () => {
-    if (!dollarRate) return 0;
-    let total = 0;
-    costsByCut.forEach((row) => {
-      const price = row.prices[row.currency];
-      if (price > 0) {
-        let usdValue = 0;
-        if (row.currency === "USD") {
-          usdValue = price;
-        } else if (row.currency === "ARS + IVA") {
-          usdValue = price / 1.105 / dollarRate;
-        } else if (row.currency === "ARS") {
-          usdValue = price / dollarRate;
-        }
-        total -= usdValue;
-      }
-    });
-    return total;
-  };
   const totalCostsUSD = calculateTotalCostsUSD();
-  const differenceWithCostsUSD = differenceUSD - totalCostsUSD;
+  const differenceWithCostsUSD = differenceUSD + totalCostsUSD;
   const differenceWithCostsPercentage =
     totalInitialUSDNum === 0
       ? 0
       : Number(
           ((differenceWithCostsUSD / totalInitialUSDNum) * 100).toFixed(2)
         );
+
+  // Formateo sin ceros innecesarios (140 -> 140, 140.50 -> 140.5)
+  const formatNumber = (n: number) => {
+    if (!isFinite(n)) return "0";
+    return n
+      .toLocaleString("es-AR", {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2,
+      })
+      .replace(/,(\d)0$/, ",$1"); // quita segundo cero si hay solo un decimal significativo
+  };
 
   return (
     <div className="flex flex-1 flex-col p-6 overflow-hidden">
@@ -957,14 +1124,7 @@ export default function EditarCotizacion({ menuOpen }: QuotationProps) {
             {selectedBusiness ? (
               <div className="space-y-2">
                 {getDisplayCuts().map((cut) => {
-                  // Verificamos que el corte exista en cuts antes de renderizar
-                  if (!cuts[cut]) {
-                    console.warn(
-                      `Corte ${cut} no encontrado en cuts, omitiendo...`
-                    );
-                    return null;
-                  }
-
+                  if (!cuts[cut]) return null;
                   const isMacro = macros.includes(cut);
                   const subCuts = Object.keys(cuts).filter(
                     (c) => cuts[c].macro === cut && !cuts[c].isFixedCost
@@ -973,7 +1133,6 @@ export default function EditarCotizacion({ menuOpen }: QuotationProps) {
                     (c) => cuts[c].prices[cuts[c].currency] > 0
                   );
                   const isDisabled = isMacro && hasSubCutPrices;
-
                   return (
                     <CutItem
                       key={cut}
@@ -1204,11 +1363,11 @@ export default function EditarCotizacion({ menuOpen }: QuotationProps) {
                   <div className="flex flex-col gap-3 text-xl text-[var(--foreground)]">
                     <p>
                       <span className="font-semibold">Inicial:</span> $
-                      {totalInitialUSD} USD
+                      {formatNumber(totalInitialUSDNum)} USD
                     </p>
                     <p>
                       <span className="font-semibold">Total Cortes:</span> $
-                      {calculateTotalUSD()} USD
+                      {formatNumber(totalCutsUSD)} USD
                     </p>
                     <p
                       className={`font-semibold ${
@@ -1216,11 +1375,8 @@ export default function EditarCotizacion({ menuOpen }: QuotationProps) {
                       }`}
                     >
                       Diferencia sin costos: {differenceUSD > 0 ? "-" : "+"}$
-                      {Math.abs(differenceUSD).toLocaleString("es-AR", {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}{" "}
-                      USD ({differenceUSD > 0 ? "-" : "+"}
+                      {formatNumber(Math.abs(differenceUSD))} USD (
+                      {differenceUSD > 0 ? "-" : "+"}
                       {Math.abs(differencePercentage)}%)
                     </p>
                     {/* Diferencia con costos */}
@@ -1233,14 +1389,8 @@ export default function EditarCotizacion({ menuOpen }: QuotationProps) {
                     >
                       Diferencia con costos:{" "}
                       {differenceWithCostsUSD > 0 ? "-" : "+"}$
-                      {Math.abs(differenceWithCostsUSD).toLocaleString(
-                        "es-AR",
-                        {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        }
-                      )}{" "}
-                      USD ({differenceWithCostsUSD > 0 ? "-" : "+"}
+                      {formatNumber(Math.abs(differenceWithCostsUSD))} USD (
+                      {differenceWithCostsUSD > 0 ? "-" : "+"}
                       {Math.abs(differenceWithCostsPercentage)}%)
                     </p>
                   </div>
@@ -1255,6 +1405,10 @@ export default function EditarCotizacion({ menuOpen }: QuotationProps) {
                 cutsForQuotation={cutsForCosts}
                 value={costsByCut}
                 onChange={setCostsByCut}
+                costTotals={costTotals}
+                useTotalCost={useTotalCost}
+                onTotalsChange={setCostTotals}
+                onUseTotalCostChange={setUseTotalCost}
               />
             </div>
           )}

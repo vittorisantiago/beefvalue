@@ -1,5 +1,13 @@
 "use client";
 
+// Extend Window interface for custom globals
+declare global {
+  interface Window {
+    CostsManagerTotals?: Record<string, { value: number; currency: string }>;
+    CostsManagerUseTotal?: boolean;
+  }
+}
+
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import Image from "next/image";
@@ -25,6 +33,13 @@ interface CutState extends Cut {
 }
 
 export default function Quotation({ menuOpen }: QuotationProps) {
+  // Estado para costos totales y modo total
+  type Currency = "ARS" | "ARS + IVA" | "USD";
+  const [costTotals, setCostTotals] = useState<
+    Record<string, { value: number | ""; currency: Currency }>
+  >({});
+  const [useTotalCost, setUseTotalCost] = useState<boolean>(false);
+
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -451,20 +466,39 @@ export default function Quotation({ menuOpen }: QuotationProps) {
   const calculateTotalCostsUSD = () => {
     if (!dollarRate) return 0;
     let total = 0;
-    costsByCut.forEach((row: CostRow) => {
-      const price = row.prices[row.currency];
-      if (price > 0) {
-        let usdValue = 0;
-        if (row.currency === "USD") {
-          usdValue = price;
-        } else if (row.currency === "ARS + IVA") {
-          usdValue = price / 1.105 / dollarRate;
-        } else if (row.currency === "ARS") {
-          usdValue = price / dollarRate;
+
+    if (useTotalCost) {
+      // Si está usando costos totales, sumar directamente los valores de costTotals
+      Object.values(costTotals).forEach(({ value, currency }) => {
+        if (value !== "") {
+          const numValue = Number(value);
+          if (currency === "USD") {
+            total += numValue;
+          } else if (currency === "ARS + IVA") {
+            total += numValue / 1.105 / dollarRate;
+          } else if (currency === "ARS") {
+            total += numValue / dollarRate;
+          }
         }
-        total -= usdValue; // Restar cada costo
-      }
-    });
+      });
+    } else {
+      // Si usa costos individuales, sumar desde costsByCut
+      costsByCut.forEach((row: CostRow) => {
+        const price = row.prices[row.currency];
+        if (price > 0) {
+          let usdValue = 0;
+          if (row.currency === "USD") {
+            usdValue = price;
+          } else if (row.currency === "ARS + IVA") {
+            usdValue = price / 1.105 / dollarRate;
+          } else if (row.currency === "ARS") {
+            usdValue = price / dollarRate;
+          }
+          total += usdValue;
+        }
+      });
+    }
+
     return total;
   };
 
@@ -694,6 +728,8 @@ export default function Quotation({ menuOpen }: QuotationProps) {
           ? 0
           : Number(((differenceUSD / totalInitialUSDNum) * 100).toFixed(2));
 
+      // Calcular el costo total en USD si está en modo total
+
       const { data: quotationData, error: quotationError } = await supabase
         .from("quotations")
         .insert({
@@ -706,6 +742,9 @@ export default function Quotation({ menuOpen }: QuotationProps) {
           total_cuts_usd: totalCutsUSD,
           difference_usd: differenceUSD,
           difference_percentage: differencePercentage,
+          total_cost_usd: calculateTotalCostsUSD(),
+          final_difference_usd: differenceWithCostsUSD,
+          final_difference_percentage: differenceWithCostsPercentage,
         })
         .select()
         .single();
@@ -731,18 +770,83 @@ export default function Quotation({ menuOpen }: QuotationProps) {
         throw new Error(`Error saving quotation cuts: ${cutsError.message}`);
 
       // Guardar costos por corte
-      const costRows = costsByCut.map((r) => ({
-        quotation_id: quotationData.id,
-        cut_id: r.cutId,
-        cost_item_id: r.costItemId,
-        currency: r.currency,
-        price_ars: r.prices.ARS,
-        price_ars_iva: r.prices["ARS + IVA"],
-        price_usd: r.prices.USD,
-        notes: r.notes,
-      }));
+      if (useTotalCost) {
+        const displayCuts = getDisplayCuts();
+        // Asociaciones corte ↔ costo (desde la grilla)
+        const associationsByCost: Record<string, Set<string>> = {};
+        costsByCut.forEach((r) => {
+          if (!associationsByCost[r.costItemId])
+            associationsByCost[r.costItemId] = new Set();
+          associationsByCost[r.costItemId].add(r.cutId);
+        });
 
-      if (costRows.length > 0) {
+        // Conjunto de cortes excluidos (ya definido arriba como excludedCutsSet)
+        const excluded = excludedCutsSet ?? new Set<string>();
+
+        const rows: Array<{
+          quotation_id: string;
+          cut_id: string;
+          cost_item_id: string;
+          currency: "USD" | "ARS" | "ARS + IVA";
+          price_ars: number;
+          price_ars_iva: number;
+          price_usd: number;
+          notes: string;
+        }> = [];
+
+        Object.entries(costTotals).forEach(([costItemId, data]) => {
+          if (data.value === "") return;
+          // Cortes asociados a ese cost item, si no hay, usar fallback sin los excluidos
+          const associatedCutIds = associationsByCost[costItemId];
+          const candidateCuts = associatedCutIds
+            ? displayCuts.filter((name) => associatedCutIds.has(cuts[name].id))
+            : displayCuts.filter((name) => !excluded.has(name));
+
+          const denom = candidateCuts.reduce(
+            (sum, name) => sum + cuts[name].percentage,
+            0
+          );
+          if (denom <= 0) return;
+
+          candidateCuts.forEach((name) => {
+            const proportion = cuts[name].percentage / denom;
+            const v = Number(data.value) * proportion;
+            const cur = data.currency;
+            rows.push({
+              quotation_id: quotationData.id,
+              cut_id: cuts[name].id,
+              cost_item_id: costItemId,
+              currency: cur,
+              price_ars: cur === "ARS" ? v : 0,
+              price_ars_iva: cur === "ARS + IVA" ? v : 0,
+              price_usd: cur === "USD" ? v : 0,
+              notes: "Costo distribuido automáticamente",
+            });
+          });
+        });
+
+        if (rows.length > 0) {
+          const { error: qccError } = await supabase
+            .from("quotation_cut_costs")
+            .insert(rows);
+          if (qccError)
+            throw new Error(
+              `Error saving quotation costs: ${qccError.message}`
+            );
+        }
+      } else if (costsByCut.length > 0) {
+        // Guardar costos individuales
+        const costRows = costsByCut.map((r) => ({
+          quotation_id: quotationData.id,
+          cut_id: r.cutId,
+          cost_item_id: r.costItemId,
+          currency: r.currency,
+          price_ars: r.prices.ARS,
+          price_ars_iva: r.prices["ARS + IVA"],
+          price_usd: r.prices.USD,
+          notes: r.notes,
+        }));
+
         const { error: qccError } = await supabase
           .from("quotation_cut_costs")
           .insert(costRows);
@@ -803,7 +907,7 @@ export default function Quotation({ menuOpen }: QuotationProps) {
 
   // Nueva diferencia con costos
   const totalCostsUSD = calculateTotalCostsUSD();
-  const differenceWithCostsUSD = differenceUSD - totalCostsUSD;
+  const differenceWithCostsUSD = differenceUSD + totalCostsUSD;
   const differenceWithCostsPercentage =
     totalInitialUSDNum === 0
       ? 0
@@ -1745,6 +1849,10 @@ export default function Quotation({ menuOpen }: QuotationProps) {
                   cutsForQuotation={cutsForCosts}
                   value={costsByCut}
                   onChange={setCostsByCut}
+                  costTotals={costTotals}
+                  useTotalCost={useTotalCost}
+                  onTotalsChange={setCostTotals}
+                  onUseTotalCostChange={setUseTotalCost}
                 />
               </div>
             )}
