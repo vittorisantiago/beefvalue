@@ -1198,7 +1198,7 @@ export default function Reportes() {
           <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg relative group">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-semibold text-[var(--foreground)]">
-                Top 10 Costos (Polar Area)
+                Top 10 Costos
               </h2>
               <button
                 onClick={() => setExpandedChart("top10CostosPolar")}
