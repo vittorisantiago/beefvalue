@@ -752,33 +752,48 @@ export default function Reportes() {
         `beefvalue_graficos_${new Date().toLocaleDateString("es-AR")}.pdf`
       );
     } else if (type === "Informe Escrito") {
-      doc.setFillColor(245, 245, 245);
-      doc.rect(
-        0,
-        0,
-        doc.internal.pageSize.getWidth(),
-        doc.internal.pageSize.getHeight(),
-        "F"
-      );
-
-      doc.setFillColor(22, 163, 74);
-      doc.rect(0, 0, pageWidth, 28, "F");
-      doc.addImage(img, "PNG", 12, 6, 14, 14);
-      doc.setFontSize(22);
-      doc.setTextColor(255, 255, 255);
-      doc.setFont("helvetica", "bold");
-      doc.text("BeefValue", pageWidth / 2, 16, { align: "center" });
-      doc.setFontSize(12);
-      doc.setTextColor(255, 255, 255);
-      doc.setFont("helvetica", "bold");
-      doc.text(
-        `Fecha: ${new Date().toLocaleDateString("es-AR")}`,
-        pageWidth - 18,
-        12,
-        { align: "right" }
-      );
+      // Helpers de paginación mínimos
+      const pageHeight = doc.internal.pageSize.getHeight();
       let y = 34;
+      const drawHeader = () => {
+        doc.setFillColor(245, 245, 245);
+        doc.rect(
+          0,
+          0,
+          doc.internal.pageSize.getWidth(),
+          doc.internal.pageSize.getHeight(),
+          "F"
+        );
 
+        doc.setFillColor(22, 163, 74);
+        doc.rect(0, 0, pageWidth, 28, "F");
+        doc.addImage(img, "PNG", 12, 6, 14, 14);
+        doc.setFontSize(22);
+        doc.setTextColor(255, 255, 255);
+        doc.setFont("helvetica", "bold");
+        doc.text("BeefValue", pageWidth / 2, 16, { align: "center" });
+        doc.setFontSize(12);
+        doc.setTextColor(255, 255, 255);
+        doc.setFont("helvetica", "bold");
+        doc.text(
+          `Fecha: ${new Date().toLocaleDateString("es-AR")}`,
+          pageWidth - 18,
+          12,
+          { align: "right" }
+        );
+      };
+      const addPage = () => {
+        doc.addPage();
+        drawHeader();
+        y = 34;
+      };
+      const ensureSpace = (space = 6) => {
+        if (y + space > pageHeight - 16) addPage();
+      };
+
+      drawHeader();
+
+      ensureSpace(32 + 10);
       doc.setFillColor(255, 255, 255);
       doc.roundedRect(12, y, pageWidth - 24, 32, 4, 4, "F");
       doc.setFontSize(15);
@@ -789,6 +804,7 @@ export default function Reportes() {
       doc.setTextColor(60, 60, 60);
       doc.setFont("helvetica", "normal");
       y += 15;
+      ensureSpace();
       doc.text(`Total Cotizaciones: ${totalQuotations}`, 18, y);
       y += 7;
       if (maxVisualPositiveBenefitQuotation) {
@@ -810,6 +826,7 @@ export default function Reportes() {
         doc.text("Mayor Diferencia Absoluta (USD): Sin datos", 18, y);
       }
       y += 7;
+      ensureSpace();
       doc.text(
         `Negocio Más Activo: ${mostActiveBusiness.name} (${
           mostActiveBusiness.count
@@ -818,6 +835,7 @@ export default function Reportes() {
         y
       );
       y += 7;
+      ensureSpace();
       doc.text(
         `Mes Más Activo: ${busiestMonth.month} (${busiestMonth.count} ${
           busiestMonth.count === 1 ? "cotización" : "cotizaciones"
@@ -831,6 +849,7 @@ export default function Reportes() {
       doc.line(16, y, pageWidth - 16, y);
       y += 8;
 
+      ensureSpace(12);
       doc.setFontSize(15);
       doc.setTextColor(22, 163, 74);
       doc.setFont("helvetica", "bold");
@@ -841,22 +860,26 @@ export default function Reportes() {
       doc.setFont("helvetica", "normal");
       doc.setFont("helvetica", "bold");
       doc.setTextColor(22, 163, 74);
+      ensureSpace();
       doc.text("Cotizaciones por Mes:", 18, y);
       doc.setFont("helvetica", "normal");
       doc.setTextColor(60, 60, 60);
       y += 6;
       monthlyData.forEach((d) => {
+        ensureSpace();
         doc.text(`• ${d.month}: ${d.count}`, 22, y);
         y += 6;
       });
       y += 2;
       doc.setFont("helvetica", "bold");
       doc.setTextColor(22, 163, 74);
+      ensureSpace();
       doc.text("Cotizaciones por Negocio:", 18, y);
       doc.setFont("helvetica", "normal");
       doc.setTextColor(60, 60, 60);
       y += 6;
       businessData.forEach((d) => {
+        ensureSpace();
         doc.text(
           `• ${d.name}: ${d.count} cotización${d.count !== 1 ? "es" : ""}`,
           22,
@@ -867,11 +890,13 @@ export default function Reportes() {
       y += 2;
       doc.setFont("helvetica", "bold");
       doc.setTextColor(22, 163, 74);
+      ensureSpace();
       doc.text("Top 5 Negocios por Ganancia (USD):", 18, y);
       doc.setFont("helvetica", "normal");
       doc.setTextColor(60, 60, 60);
       y += 6;
       businessData.slice(0, 5).forEach((d) => {
+        ensureSpace();
         doc.text(
           `• ${d.name}: $${d.totalGain.toLocaleString("es-AR", {
             minimumFractionDigits: 2,
@@ -885,11 +910,13 @@ export default function Reportes() {
       y += 2;
       doc.setFont("helvetica", "bold");
       doc.setTextColor(22, 163, 74);
+      ensureSpace();
       doc.text("Top 10 Costos (USD):", 18, y);
       doc.setFont("helvetica", "normal");
       doc.setTextColor(60, 60, 60);
       y += 6;
       top10Costos.forEach((c) => {
+        ensureSpace();
         doc.text(
           `• ${c.name}: $${c.total.toLocaleString("es-AR", {
             minimumFractionDigits: 2,
@@ -902,12 +929,14 @@ export default function Reportes() {
       y += 2;
       doc.setFont("helvetica", "bold");
       doc.setTextColor(22, 163, 74);
+      ensureSpace();
       doc.text("Radar de Proporción de Costos:", 18, y);
       doc.setFont("helvetica", "normal");
       doc.setTextColor(60, 60, 60);
       y += 6;
       const totalRadar = top10Costos.reduce((acc, cc) => acc + cc.total, 0);
       top10Costos.forEach((c) => {
+        ensureSpace();
         const percent = totalRadar > 0 ? (c.total / totalRadar) * 100 : 0;
         doc.text(`• ${c.name}: ${percent.toFixed(2)}%`, 22, y);
         y += 6;
