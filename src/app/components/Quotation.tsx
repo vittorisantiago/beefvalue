@@ -10,6 +10,7 @@ declare global {
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
+import { logAuditEvent } from "@/lib/audit";
 import Image from "next/image";
 import CutItem from "./CutItem";
 import BusinessModal from "./BusinessModal";
@@ -860,6 +861,27 @@ export default function Quotation({ menuOpen }: QuotationProps) {
           ...prev,
           [selectedBusiness]: true,
         }));
+      }
+
+      // Auditoría: registrar creación de cotización (best-effort)
+      try {
+        const businessName = businesses.find(
+          (b) => b.id === selectedBusiness
+        )?.name;
+        await logAuditEvent("quotation_created", {
+          quotation_id: quotationData.id,
+          business_id: selectedBusiness || undefined,
+          business_name: businessName,
+          total_initial_usd: totalInitialUSDNum,
+          total_cuts_usd: totalCutsUSD,
+          difference_usd: differenceUSD,
+          difference_percentage: differencePercentage,
+          total_cost_usd: calculateTotalCostsUSD(),
+          final_difference_usd: differenceWithCostsUSD,
+          final_difference_percentage: differenceWithCostsPercentage,
+        });
+      } catch (e) {
+        console.warn("Audit log quotation_created falló", e);
       }
 
       setShowSuccessPopup(true);
