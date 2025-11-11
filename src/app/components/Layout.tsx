@@ -1,6 +1,7 @@
 "use client";
 
 import { supabase } from "@/lib/supabase";
+import { logAuditEvent } from "@/lib/audit";
 import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
 import { useState, useEffect } from "react";
@@ -98,6 +99,12 @@ export default function Layout({ children }: LayoutProps) {
         window.localStorage.removeItem(key);
       }
     } catch {}
+    // Registrar logout antes de invalidar sesión
+    try {
+      await logAuditEvent("logout");
+    } catch (e) {
+      console.warn("Audit log (logout) falló", e);
+    }
     await supabase.auth.signOut();
     router.push("/landing");
     setShowConfirmLogout(false);
