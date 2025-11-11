@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
+import { logAuditEvent } from "@/lib/audit";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
@@ -46,6 +47,12 @@ export default function LoginPage() {
             : "Error de conexión."
         );
       } else if (data.user) {
+        // Registrar evento de login (no bloquear flujo si falla)
+        try {
+          await logAuditEvent("login");
+        } catch (e) {
+          console.warn("Audit log (login) falló", e);
+        }
         setSuccess(true);
         setRedirectSeconds(5);
         setTimeout(() => router.push("/"), 5000);
