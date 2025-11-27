@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import Layout from "../components/Layout";
+import CostCategoryInsights from "../components/CostCategoryInsights";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -415,10 +416,6 @@ export default function ClientCostos() {
             </button>
           </div>
         </div>
-        <div className="text-xs text-gray-500 mb-2">
-          Tip: hacé clic en una fila para ver su evolución diaria.
-        </div>
-
         {error && (
           <div className="p-3 rounded bg-red-50 text-red-700 border border-red-200">
             {error}
@@ -467,6 +464,40 @@ export default function ClientCostos() {
                   cotizaciones
                 </div>
               </div>
+            </div>
+
+            <CostCategoryInsights
+              rows={rows}
+              costItems={costItems}
+              dateRange={dateRange}
+            />
+
+            <div className="flex items-center gap-3 px-4 py-3 bg-blue-50 dark:bg-blue-900/30 text-blue-800 dark:text-blue-100 border border-blue-100 dark:border-blue-800 rounded-lg">
+              <svg
+                className="w-4 h-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <circle
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                />
+                <path
+                  d="M12 8.5H12.01M11 11H12V16H13"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              <p className="text-sm">
+                Tip: hacé clic en una fila de la tabla para ver su evolución
+                diaria.
+              </p>
             </div>
 
             {/* Tabla detallada por costo */}
